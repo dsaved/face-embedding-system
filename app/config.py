@@ -34,8 +34,24 @@ class Config:
     CACHE_EMBEDDINGS = os.getenv("CACHE_EMBEDDINGS", "True") == "True"
     EMBEDDING_CACHE_TTL = int(os.getenv("EMBEDDING_CACHE_TTL", "3600"))  # 1 hour
     
+    # Video Processing Configuration
+    VIDEO_FRAME_SKIP = int(os.getenv("VIDEO_FRAME_SKIP", "2"))  # Process every 2nd frame
+    VIDEO_RECOGNITION_INTERVAL = int(os.getenv("VIDEO_RECOGNITION_INTERVAL", "30"))  # Frames
+    VIDEO_DETECTION_INTERVAL = int(os.getenv("VIDEO_DETECTION_INTERVAL", "5"))  # Frames
+    VIDEO_MAX_TRACKED_FACES = int(os.getenv("VIDEO_MAX_TRACKED_FACES", "10"))
+    VIDEO_MAX_FRAME_WIDTH = int(os.getenv("VIDEO_MAX_FRAME_WIDTH", "640"))  # Pixels
+    VIDEO_CACHE_TTL = int(os.getenv("VIDEO_CACHE_TTL", "300"))  # 5 minutes
+    VIDEO_CACHE_MAX_SIZE = int(os.getenv("VIDEO_CACHE_MAX_SIZE", "1000"))
+    
+    # WebSocket Configuration
+    WEBSOCKET_TIMEOUT = int(os.getenv("WEBSOCKET_TIMEOUT", "60"))  # Seconds
+    WEBSOCKET_PING_TIMEOUT = int(os.getenv("WEBSOCKET_PING_TIMEOUT", "60"))
+    WEBSOCKET_PING_INTERVAL = int(os.getenv("WEBSOCKET_PING_INTERVAL", "25"))
+    MAX_CONCURRENT_STREAMS = int(os.getenv("MAX_CONCURRENT_STREAMS", "10"))
+    
     # Security settings
     API_KEY_REQUIRED = os.getenv("API_KEY_REQUIRED", "True") == "True"
+    API_KEY = os.getenv("API_KEY", "sk-face123abc")  # Added single API key
     API_KEYS = os.getenv("API_KEYS", "").split(",") if os.getenv("API_KEYS") else []
     
     # Rate limiting

@@ -359,7 +359,22 @@ def add_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Content-Security-Policy'] = "default-src 'self'"
+    
+    # More permissive CSP for demo page, strict for API endpoints
+    if request.endpoint in ['video.video_demo', 'video_demo', 'index'] or request.path in ['/video/demo', '/demo', '/']:
+        # Allow inline styles/scripts and external CDN for demo functionality
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.socket.io; "
+            "style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self' ws: wss:; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "font-src 'self'"
+        )
+    else:
+        # Strict CSP for API endpoints
+        response.headers['Content-Security-Policy'] = "default-src 'self'"
     
     # API-specific headers
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -410,5 +425,38 @@ def audit_request(f):
             }, 'ERROR')
             
             raise
+    
+    return decorated_function
+
+
+def require_api_key_ws(f):
+    """Decorator to require API key authentication for WebSocket endpoints."""
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not Config.API_KEY_REQUIRED:
+            return f(*args, **kwargs)
+        
+        # Get API key from header or query parameter
+        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        
+        if not api_key:
+            log_security_event('WS_AUTH_MISSING_API_KEY', {
+                'endpoint': request.endpoint,
+                'method': request.method
+            }, 'WARNING')
+            return jsonify({'error': 'API key required'}), 401
+        
+        if not validate_api_key(api_key):
+            log_security_event('WS_AUTH_INVALID_API_KEY', {
+                'endpoint': request.endpoint,
+                'method': request.method,
+                'api_key_hash': hash_api_key(api_key)[:8] + '...'
+            }, 'WARNING')
+            return jsonify({'error': 'Invalid API key'}), 401
+        
+        # Store API key info in request context
+        g.api_key_hash = hash_api_key(api_key)[:8]
+        
+        return f(*args, **kwargs)
     
     return decorated_function

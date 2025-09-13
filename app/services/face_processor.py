@@ -26,17 +26,29 @@ class FaceDetector:
             self._init_opencv_dnn()
         elif self.model_type == "mtcnn":
             self._init_mtcnn()
+        elif self.model_type == "hybrid":
+            self._init_hybrid()
         else:
             raise ValueError(f"Unsupported face detection model: {self.model_type}")
     
     def _init_opencv_dnn(self):
         """Initialize OpenCV DNN face detector."""
         try:
+            import os
+            # Get absolute path to models directory
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(current_dir))
+            model_dir = os.path.join(project_root, 'models')
+            
+            model_weights = os.path.join(model_dir, 'opencv_face_detector_uint8.pb')
+            model_config = os.path.join(model_dir, 'opencv_face_detector.pbtxt')
+            
+            logger.debug(f"Loading OpenCV DNN models from: {model_dir}")
+            logger.debug(f"Model weights: {model_weights}")
+            logger.debug(f"Model config: {model_config}")
+            
             # Load the DNN model
-            self.net = cv2.dnn.readNetFromTensorflow(
-                'models/opencv_face_detector_uint8.pb',
-                'models/opencv_face_detector.pbtxt'
-            )
+            self.net = cv2.dnn.readNetFromTensorflow(model_weights, model_config)
             logger.info("OpenCV DNN face detector initialized successfully")
         except Exception as e:
             logger.warning(f"Could not load OpenCV DNN model: {e}")
@@ -49,32 +61,112 @@ class FaceDetector:
         self.detector = MTCNN()
         logger.info("MTCNN face detector initialized successfully")
     
-    def detect_faces(self, image: np.ndarray, min_confidence: float = 0.5) -> List[Dict[str, Any]]:
+    def _init_hybrid(self):
+        """Initialize hybrid detection using multiple models for best results."""
+        # Use face_recognition as primary (fastest and reliable)
+        self.primary_detector = "face_recognition"
+        # Use OpenCV DNN as secondary for confidence boost
+        try:
+            self.net = cv2.dnn.readNetFromTensorflow(
+                'models/opencv_face_detector_uint8.pb',
+                'models/opencv_face_detector.pbtxt'
+            )
+            self.secondary_detector = "opencv_dnn"
+            logger.info("Hybrid detector initialized with face_recognition + OpenCV DNN")
+        except Exception:
+            self.secondary_detector = None
+            logger.info("Hybrid detector initialized with face_recognition only")
+    
+    def detect_faces(self, image: np.ndarray, min_confidence: float = 0.6) -> List[Dict[str, Any]]:
         """
-        Detect faces in an image with enhanced filtering to reduce false positives.
+        Detect faces in an image using the specified detection model.
         
         Args:
             image: Input image as numpy array
-            min_confidence: Minimum confidence threshold
+            min_confidence: Minimum confidence threshold for detections
             
         Returns:
-            List of detected faces with bounding boxes and confidence scores
+            List of face dictionaries with bbox, confidence, and landmarks
         """
+        logger.debug(f"Starting face detection with model: {self.model_type}, image shape: {image.shape}, min_confidence: {min_confidence}")
+        
         if self.model_type == "opencv_dnn":
             faces = self._detect_opencv_dnn(image, min_confidence)
         elif self.model_type == "mtcnn":
             faces = self._detect_mtcnn(image, min_confidence)
-        elif self.model_type == "face_recognition_hog":
-            faces = self._detect_face_recognition(image)
+        elif self.model_type == "hybrid":
+            faces = self._detect_hybrid(image, min_confidence)
         elif self.model_type == "haar_cascade":
             faces = self._detect_haar_cascade(image)
+        elif self.model_type == "face_recognition_hog":
+            faces = self._detect_face_recognition(image)
         else:
-            faces = []
+            raise ValueError(f"Unknown detection model: {self.model_type}")
         
-        # Apply enhanced post-processing to reduce false positives
+        logger.debug(f"Raw detection found {len(faces)} faces")
+        
+        # Apply post-processing for better accuracy
         faces = self._post_process_detections(image, faces)
         
+        logger.debug(f"After post-processing: {len(faces)} faces using {self.model_type}")
         return faces
+
+    def _detect_hybrid(self, image: np.ndarray, min_confidence: float) -> List[Dict[str, Any]]:
+        """Hybrid detection using multiple models for optimal results."""
+        # Primary detection using face_recognition (fast and reliable)
+        primary_faces = self._detect_face_recognition(image)
+        
+        # If we have secondary detector and low confidence in primary results
+        if (hasattr(self, 'secondary_detector') and self.secondary_detector and 
+            (len(primary_faces) == 0 or any(f['confidence'] < 0.8 for f in primary_faces))):
+            
+            # Use OpenCV DNN for secondary validation
+            secondary_faces = self._detect_opencv_dnn(image, min_confidence)
+            
+            # Merge results, preferring higher confidence detections
+            merged_faces = self._merge_detections(primary_faces, secondary_faces)
+            return merged_faces
+        
+        return primary_faces
+    
+    def _merge_detections(self, primary_faces: List[Dict], secondary_faces: List[Dict]) -> List[Dict]:
+        """Merge detections from multiple models, avoiding duplicates."""
+        merged = []
+        
+        # Add all primary faces
+        for face in primary_faces:
+            merged.append(face)
+        
+        # Add secondary faces that don't overlap with primary
+        for sec_face in secondary_faces:
+            overlaps = False
+            for prim_face in primary_faces:
+                if self._calculate_overlap(sec_face['bbox'], prim_face['bbox']) > 0.3:
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                merged.append(sec_face)
+        
+        return merged
+    
+    def _calculate_overlap(self, bbox1: Tuple[int, int, int, int], 
+                          bbox2: Tuple[int, int, int, int]) -> float:
+        """Calculate overlap ratio between two bounding boxes."""
+        x1, y1, w1, h1 = bbox1
+        x2, y2, w2, h2 = bbox2
+        
+        # Calculate intersection
+        xi1, yi1 = max(x1, x2), max(y1, y2)
+        xi2, yi2 = min(x1 + w1, x2 + w2), min(y1 + h1, y2 + h2)
+        
+        if xi2 <= xi1 or yi2 <= yi1:
+            return 0.0
+        
+        intersection = (xi2 - xi1) * (yi2 - yi1)
+        union = w1 * h1 + w2 * h2 - intersection
+        
+        return intersection / union if union > 0 else 0.0
     
     def _detect_opencv_dnn(self, image: np.ndarray, min_confidence: float) -> List[Dict[str, Any]]:
         """Detect faces using OpenCV DNN."""
@@ -128,15 +220,32 @@ class FaceDetector:
     
     def _detect_face_recognition(self, image: np.ndarray) -> List[Dict[str, Any]]:
         """Detect faces using face_recognition library (more accurate fallback)."""
+        logger.debug(f"Using face_recognition detection on image shape: {image.shape}")
+        
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Use HOG model (faster, good accuracy)
-        face_locations = face_recognition.face_locations(rgb_image, model="hog")
+        # Try CNN model first (more accurate but slower)
+        try:
+            face_locations = face_recognition.face_locations(rgb_image, model="cnn")
+            logger.debug(f"face_recognition CNN found {len(face_locations)} face locations")
+        except Exception as e:
+            logger.debug(f"CNN model failed, falling back to HOG: {e}")
+            # Fallback to HOG model (faster, good accuracy)
+            face_locations = face_recognition.face_locations(rgb_image, model="hog")
+            logger.debug(f"face_recognition HOG found {len(face_locations)} face locations")
+        
+        # If still no faces found, try with different number_of_times_to_upsample
+        if len(face_locations) == 0:
+            logger.debug("No faces found, trying with upsampling")
+            face_locations = face_recognition.face_locations(rgb_image, model="hog", number_of_times_to_upsample=1)
+            logger.debug(f"face_recognition with upsampling found {len(face_locations)} face locations")
         
         faces = []
-        for (top, right, bottom, left) in face_locations:
+        for i, (top, right, bottom, left) in enumerate(face_locations):
+            bbox = (left, top, right - left, bottom - top)
+            logger.debug(f"Face {i+1}: bbox={bbox}")
             faces.append({
-                'bbox': (left, top, right - left, bottom - top),
+                'bbox': bbox,
                 'confidence': 0.9,  # face_recognition doesn't provide confidence, use high value
                 'landmarks': None
             })
@@ -170,11 +279,10 @@ class FaceDetector:
                 logger.debug(f"Filtered face outside image bounds: {face['bbox']}")
                 continue
             
-            # 4. Verify it's actually a face using face_recognition for better accuracy
-            if self._verify_face_with_encodings(image, face):
-                valid_faces.append(face)
-            else:
-                logger.debug(f"Face verification failed for bbox: {face['bbox']}")
+            # 4. Skip face verification for now - trust the detector
+            # Note: Additional verification was too strict and filtering valid faces
+            valid_faces.append(face)
+            logger.debug(f"Face passed basic validation: bbox={face['bbox']}")
         
         # 5. Apply Non-Maximum Suppression to remove overlapping detections
         valid_faces = self._apply_nms(valid_faces, overlap_threshold=0.4)

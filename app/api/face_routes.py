@@ -116,6 +116,17 @@ def decode_base64_image(base64_string: str) -> Optional[np.ndarray]:
         return None
 
 
+
+def cleanup_temp_file(temp_file_path: str, should_cleanup: bool):
+    """Clean up temporary file safely."""
+    if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
+        try:
+            os.remove(temp_file_path)
+            logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+        except Exception as e:
+            logger.error(f"Failed to cleanup temporary file {temp_file_path}: {e}")
+
+
 def get_image_from_request(request) -> tuple[Optional[np.ndarray], Optional[str], bool]:
     """
     Get image from request (file upload, base64, or file path).
@@ -189,8 +200,7 @@ def detect_faces():
         )
         
         # Clean up temporary file if needed
-        if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        cleanup_temp_file(temp_file_path, should_cleanup)
         
         return jsonify(convert_numpy_types({
             'success': True,
@@ -208,6 +218,10 @@ def detect_faces():
     
     except Exception as e:
         logger.error(f"Face detection error: {e}")
+        # Clean up temporary file if needed (even on error)
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
+        
         return jsonify({'error': str(e)}), 500
 
 
@@ -253,8 +267,7 @@ def encode_faces():
         )
         
         # Clean up temporary file if needed
-        if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        cleanup_temp_file(temp_file_path, should_cleanup)
         
         return jsonify(convert_numpy_types({
             'success': True,
@@ -274,6 +287,10 @@ def encode_faces():
     
     except Exception as e:
         logger.error(f"Face encoding error: {e}")
+        # Clean up temporary file if needed (even on error)
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
+        
         return jsonify({'error': str(e)}), 500
 
 
@@ -348,8 +365,7 @@ def register_face():
         )
         
         # Clean up temporary file if needed
-        if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        cleanup_temp_file(temp_file_path, should_cleanup)
         
         return jsonify(convert_numpy_types({
             'success': True,
@@ -363,6 +379,10 @@ def register_face():
     
     except Exception as e:
         logger.error(f"Face registration error: {e}")
+        # Clean up temporary file if needed (even on error)
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
+        
         return jsonify({'error': str(e)}), 500
 
 
@@ -440,8 +460,7 @@ def identify_face():
         )
         
         # Clean up temporary file if needed
-        if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        cleanup_temp_file(temp_file_path, should_cleanup)
         
         return jsonify(convert_numpy_types({
             'success': True,
@@ -452,6 +471,10 @@ def identify_face():
     
     except Exception as e:
         logger.error(f"Face identification error: {e}")
+        # Clean up temporary file if needed (even on error)
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
+        
         return jsonify({'error': str(e)}), 500
 
 
@@ -521,8 +544,7 @@ def verify_face():
         )
         
         # Clean up temporary file if needed
-        if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        cleanup_temp_file(temp_file_path, should_cleanup)
         
         return jsonify(convert_numpy_types({
             'success': True,
@@ -535,6 +557,10 @@ def verify_face():
     
     except Exception as e:
         logger.error(f"Face verification error: {e}")
+        # Clean up temporary file if needed (even on error)
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
+        
         return jsonify({'error': str(e)}), 500
 
 
@@ -610,8 +636,7 @@ def search_similar_faces():
         )
         
         # Clean up temporary file if needed
-        if should_cleanup and temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        cleanup_temp_file(temp_file_path, should_cleanup)
         
         return jsonify(convert_numpy_types({
             'success': True,
