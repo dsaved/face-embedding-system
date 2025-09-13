@@ -3,7 +3,7 @@ flask==2.3.3
 flask-sqlalchemy==3.0.5
 flask-migrate==4.0.5
 flask-socketio==5.3.6
-Werkzeug==2.3.7
+Werkzeug==3.0.6
 
 # Database
 psycopg2-binary==2.9.7
