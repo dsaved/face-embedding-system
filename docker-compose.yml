@@ -1,0 +1,87 @@
+services:
+  # PostgreSQL Database with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: face_postgres
+    environment:
+      POSTGRES_DB: face_db
+      POSTGRES_USER: face_user
+      POSTGRES_PASSWORD: face_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - face_network
+    restart: unless-stopped
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: face_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - face_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Face embedding API service
+  face_api:
+    build: .
+    container_name: face_api
+    environment:
+      - DATABASE_URL=postgresql://face_user:face_password@postgres:5432/face_db
+      - REDIS_URL=redis://redis:6379/0
+      - FLASK_ENV=production
+      - DEBUG=False
+      - LOG_LEVEL=INFO
+      - FACE_DETECTION_MODEL=opencv_dnn
+      - FACE_ENCODING_MODEL=facenet
+      - FACE_EMBEDDING_SIZE=128
+      - MIN_FACE_SIZE=50
+      - FACE_CONFIDENCE_THRESHOLD=0.5
+      - SIMILARITY_THRESHOLD=0.6
+      - UPLOAD_FOLDER=/app/uploads
+      - MAX_CONTENT_LENGTH=16777216
+      - USE_FAISS_INDEX=True
+      - FAISS_INDEX_PATH=/app/data/face_index.faiss
+      - CACHE_EMBEDDINGS=True
+      - EMBEDDING_CACHE_TTL=3600
+    volumes:
+      - face_uploads:/app/uploads
+      - face_data:/app/data
+      - face_models:/app/models
+    ports:
+      - "5001:5001"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - face_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  face_uploads:
+    driver: local
+  face_data:
+    driver: local
+  face_models:
+    driver: local
+
+networks:
+  face_network:
+    driver: bridge
