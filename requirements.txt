@@ -27,7 +27,7 @@ face-recognition==1.3.0
 # keras==2.13.1
 
 # Vector Operations (lightweight alternatives)
-scikit-learn==1.3.0
+scikit-learn==1.5.0
 # faiss-cpu==1.7.4  # Can be heavy to build
 
 # Security & Performance
