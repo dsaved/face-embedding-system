@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -59,8 +60,9 @@
         .video-canvas {
             width: 100%;
             height: auto;
-            max-width: 640px;
             border-radius: 10px;
+            -webkit-transform: scaleX(-1);
+            transform: scaleX(-1);
         }
 
         .status {
@@ -162,11 +164,11 @@
             .container {
                 padding: 15px;
             }
-            
+
             .header h1 {
                 font-size: 1.5em;
             }
-            
+
             .stats {
                 flex-direction: column;
                 gap: 10px;
@@ -174,6 +176,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -188,8 +191,8 @@
         </div>
 
         <div class="video-container">
-            <video id="video" class="video-canvas" width="640" height="480" autoplay muted></video>
-            <canvas id="canvas" class="video-canvas hidden" width="640" height="480"></canvas>
+            <video id="video" class="video-canvas" height="480" autoplay muted></video>
+            <canvas id="canvas" class="video-canvas hidden" height="480"></canvas>
         </div>
 
         <div class="stats">
@@ -223,7 +226,7 @@
                 this.identifiedCountEl = document.getElementById('identified-count');
                 this.fpsCounterEl = document.getElementById('fps-counter');
                 this.errorContainer = document.getElementById('error-container');
-                
+
                 this.isProcessing = false;
                 this.lastFrameTime = 0;
                 this.frameCount = 0;
@@ -231,10 +234,10 @@
                 this.currentFaces = [];
                 this.frameRate = 10; // Optimal frame rate for real-time processing
                 this.confidenceThreshold = 0.6;
-                
+
                 this.init();
             }
-            
+
             async init() {
                 try {
                     await this.initCamera();
@@ -244,7 +247,7 @@
                     this.showError('Failed to initialize camera: ' + error.message);
                 }
             }
-            
+
             async initCamera() {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
@@ -254,78 +257,78 @@
                     }
                 });
                 this.video.srcObject = stream;
-                
+
                 return new Promise((resolve) => {
                     this.video.onloadedmetadata = () => {
                         resolve();
                     };
                 });
             }
-            
+
             initSocket() {
                 this.socket = io('/', {
                     transports: ['websocket'],
                     upgrade: false
                 });
-                
+
                 this.socket.on('connect', () => {
                     this.updateStatus('connected', 'Connected');
                     console.log('Connected to video recognition service');
                 });
-                
+
                 this.socket.on('disconnect', () => {
                     this.updateStatus('disconnected', 'Disconnected');
                     console.log('Disconnected from video recognition service');
                 });
-                
+
                 this.socket.on('face_recognition_result', (data) => {
                     this.handleRecognitionResult(data);
                 });
-                
+
                 this.socket.on('error', (error) => {
                     console.error('Socket error:', error);
                     this.showError('Connection error: ' + error.message);
                 });
             }
-            
+
             startProcessing() {
                 const processFrame = () => {
                     if (!this.video.videoWidth || this.isProcessing) {
                         requestAnimationFrame(processFrame);
                         return;
                     }
-                    
+
                     const now = Date.now();
                     const timeSinceLastFrame = now - this.lastFrameTime;
-                    
+
                     if (timeSinceLastFrame >= (1000 / this.frameRate)) {
                         this.captureAndProcessFrame();
                         this.lastFrameTime = now;
                         this.updateFPS();
                     }
-                    
+
                     requestAnimationFrame(processFrame);
                 };
-                
+
                 processFrame();
             }
-            
+
             captureAndProcessFrame() {
                 if (!this.socket || !this.socket.connected) {
                     return;
                 }
-                
+
                 this.isProcessing = true;
                 this.updateStatus('processing', 'Processing');
-                
+
                 // Capture frame
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
                 this.ctx.drawImage(this.video, 0, 0);
-                
+
                 // Convert to base64
                 const frameData = this.canvas.toDataURL('image/jpeg', 0.8);
-                
+
                 // Send for processing with optimal settings
                 this.socket.emit('process_frame', {
                     frame_data: frameData,
@@ -339,11 +342,11 @@
                     }
                 });
             }
-            
+
             handleRecognitionResult(data) {
                 this.isProcessing = false;
                 this.updateStatus('connected', 'Connected');
-                
+
                 if (data.success && data.faces) {
                     this.currentFaces = data.faces;
                     this.updateStats(data.faces);
@@ -352,42 +355,42 @@
                     console.error('Recognition error:', data.error);
                 }
             }
-            
+
             updateStats(faces) {
                 const totalFaces = faces.length;
-                const identifiedFaces = faces.filter(face => 
+                const identifiedFaces = faces.filter(face =>
                     face.identification && face.identification.person_id !== 'unknown'
                 ).length;
-                
+
                 this.facesDetectedEl.textContent = totalFaces;
                 this.identifiedCountEl.textContent = identifiedFaces;
             }
-            
+
             drawFaceOverlays(faces) {
                 // Clear existing overlays
                 document.querySelectorAll('.face-overlay').forEach(el => el.remove());
-                
+
                 faces.forEach((face, index) => {
                     this.createFaceOverlay(face, index);
                 });
             }
-            
+
             createFaceOverlay(face, index) {
                 const bbox = face.bbox;
                 const identification = face.identification;
-                
+
                 // Calculate position relative to video element
                 const videoRect = this.video.getBoundingClientRect();
                 const containerRect = this.video.parentElement.getBoundingClientRect();
-                
+
                 const scaleX = videoRect.width / this.video.videoWidth;
                 const scaleY = videoRect.height / this.video.videoHeight;
-                
+
                 const x = bbox.x * scaleX;
                 const y = bbox.y * scaleY;
                 const width = bbox.width * scaleX;
                 const height = bbox.height * scaleY;
-                
+
                 // Create overlay element
                 const overlay = document.createElement('div');
                 overlay.className = 'face-overlay';
@@ -395,11 +398,11 @@
                 overlay.style.top = y + 'px';
                 overlay.style.width = width + 'px';
                 overlay.style.height = height + 'px';
-                
+
                 // Create label
                 const label = document.createElement('div');
                 label.className = 'face-label';
-                
+
                 if (identification && identification.person_id !== 'unknown') {
                     const confidence = Math.round(identification.similarity_score * 100);
                     label.textContent = `${identification.person_name} (${confidence}%)`;
@@ -407,16 +410,16 @@
                     label.className += ' unknown';
                     label.textContent = 'Unknown';
                 }
-                
+
                 overlay.appendChild(label);
                 this.video.parentElement.appendChild(overlay);
             }
-            
+
             updateFPS() {
                 this.frameCount++;
                 const now = Date.now();
                 const timeDiff = now - this.fpsStartTime;
-                
+
                 if (timeDiff >= 1000) {
                     const fps = Math.round((this.frameCount * 1000) / timeDiff);
                     this.fpsCounterEl.textContent = fps;
@@ -424,12 +427,12 @@
                     this.fpsStartTime = now;
                 }
             }
-            
+
             updateStatus(status, text) {
                 this.statusIndicator.className = `status-indicator status-${status}`;
                 this.statusIndicator.textContent = text;
             }
-            
+
             showError(message) {
                 this.errorContainer.innerHTML = `<div class="error-message">${message}</div>`;
                 setTimeout(() => {
@@ -437,11 +440,12 @@
                 }, 5000);
             }
         }
-        
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', () => {
             new OptimizedFaceRecognition();
         });
     </script>
 </body>
+
 </html>
