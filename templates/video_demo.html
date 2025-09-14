@@ -55,6 +55,12 @@
             border-radius: 10px;
             overflow: hidden;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 640px;
+            min-height: 480px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         .video-canvas {
@@ -63,6 +69,9 @@
             border-radius: 10px;
             -webkit-transform: scaleX(-1);
             transform: scaleX(-1);
+            display: block;
+            max-width: 640px;
+            background: #000;
         }
 
         .status {
@@ -123,28 +132,56 @@
 
         .face-overlay {
             position: absolute;
-            border: 3px solid #00ff88;
-            background: rgba(0, 255, 136, 0.1);
-            border-radius: 5px;
             pointer-events: none;
+            z-index: 10;
+            /* Remove border and background - only show labels */
+            /* Use transform for better performance */
+            will-change: transform;
         }
 
         .face-label {
             position: absolute;
-            background: rgba(0, 255, 136, 0.9);
+            background: rgba(0, 255, 136, 0.95);
             color: #000;
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 14px;
+            padding: 2px 6px;
+            border-radius: 8px;
             font-weight: bold;
-            text-shadow: none;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
             white-space: nowrap;
-            transform: translateY(-35px);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(0, 255, 136, 1);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            text-align: center;
+            line-height: 1.2;
+            /* Performance optimizations */
+            will-change: transform, opacity;
+            backface-visibility: hidden;
         }
 
         .face-label.unknown {
-            background: rgba(255, 71, 87, 0.9);
+            background: rgba(255, 71, 87, 0.95);
             color: #fff;
+            border-color: rgba(255, 71, 87, 1);
+        }
+
+        .face-label.high-confidence {
+            background: rgba(0, 255, 136, 1);
+            border-color: rgba(0, 200, 100, 1);
+        }
+
+        .face-label.medium-confidence {
+            background: rgba(255, 165, 0, 0.95);
+            color: #000;
+            border-color: rgba(255, 140, 0, 1);
+        }
+
+        .face-label.low-confidence {
+            background: rgba(255, 71, 87, 0.95);
+            color: #fff;
+            border-color: rgba(255, 50, 50, 1);
         }
 
         .hidden {
@@ -232,37 +269,57 @@
                 this.frameCount = 0;
                 this.fpsStartTime = Date.now();
                 this.currentFaces = [];
-                this.frameRate = 10; // Optimal frame rate for real-time processing
+                this.frameRate = 15; // Increased from 10 for smoother updates
                 this.confidenceThreshold = 0.6;
+                this.skipFrames = 0; // Skip processing every N frames for optimization
+                this.maxSkipFrames = 2; // Process every 3rd frame only
 
                 this.init();
             }
 
             async init() {
                 try {
+                    console.log('Initializing camera...');
                     await this.initCamera();
+                    console.log('Camera initialized successfully');
+                    
+                    console.log('Initializing socket...');
                     this.initSocket();
+                    console.log('Socket initialized');
+                    
+                    console.log('Starting processing...');
                     this.startProcessing();
+                    console.log('Processing started');
                 } catch (error) {
+                    console.error('Initialization error:', error);
                     this.showError('Failed to initialize camera: ' + error.message);
                 }
             }
 
             async initCamera() {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 640 },
-                        height: { ideal: 480 },
-                        frameRate: { ideal: 30 }
-                    }
-                });
-                this.video.srcObject = stream;
-
-                return new Promise((resolve) => {
-                    this.video.onloadedmetadata = () => {
-                        resolve();
-                    };
-                });
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 480 }, // Reduced from 640 for faster processing
+                            height: { ideal: 360 }, // Reduced from 480 for faster processing
+                            frameRate: { ideal: 30 }
+                        }
+                    });
+                    
+                    this.video.srcObject = stream;
+                    this.video.style.display = 'block';
+                    
+                    return new Promise((resolve) => {
+                        this.video.onloadedmetadata = () => {
+                            console.log('Video metadata loaded:', this.video.videoWidth, 'x', this.video.videoHeight);
+                            this.video.play();
+                            resolve();
+                        };
+                    });
+                } catch (error) {
+                    console.error('Camera initialization error:', error);
+                    throw error;
+                }
             }
 
             initSocket() {
@@ -318,26 +375,42 @@
                     return;
                 }
 
-                this.isProcessing = true;
-                this.updateStatus('processing', 'Processing');
+                // Skip frames for optimization - only process every 3rd frame
+                if (this.skipFrames < this.maxSkipFrames) {
+                    this.skipFrames++;
+                    // Still update overlays with current face data
+                    if (this.currentFaces.length > 0) {
+                        this.drawFaceOverlays(this.currentFaces);
+                    }
+                    return;
+                }
+                this.skipFrames = 0;
 
-                // Capture frame
+                this.isProcessing = true;
+                // Don't update status to 'processing' for every frame - keep it stable
+
+                // Optimized frame capture with lower quality for speed
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
-                this.ctx.drawImage(this.video, 0, 0);
+                
+                // Flip the canvas context to match the flipped video display
+                this.ctx.save();
+                this.ctx.scale(-1, 1);
+                this.ctx.drawImage(this.video, -this.video.videoWidth, 0);
+                this.ctx.restore();
 
-                // Convert to base64
-                const frameData = this.canvas.toDataURL('image/jpeg', 0.8);
+                // Convert to base64 with lower quality for faster processing
+                const frameData = this.canvas.toDataURL('image/jpeg', 0.6);
 
-                // Send for processing with optimal settings
+                // Send for processing with optimized settings
                 this.socket.emit('process_frame', {
                     frame_data: frameData,
                     confidence_threshold: this.confidenceThreshold,
-                    detection_model: 'hybrid', // Use best combined model
+                    detection_model: 'face_recognition_hog', // Faster than hybrid
                     options: {
                         detect_faces: true,
                         identify_faces: true,
-                        track_faces: true,
+                        track_faces: false, // Disable tracking for speed
                         return_embeddings: false
                     }
                 });
@@ -345,7 +418,7 @@
 
             handleRecognitionResult(data) {
                 this.isProcessing = false;
-                this.updateStatus('connected', 'Connected');
+                // Don't update status back to 'connected' after every frame - keep it stable
 
                 if (data.success && data.faces) {
                     this.currentFaces = data.faces;
@@ -362,36 +435,54 @@
                     face.identification && face.identification.person_id !== 'unknown'
                 ).length;
 
-                this.facesDetectedEl.textContent = totalFaces;
-                this.identifiedCountEl.textContent = identifiedFaces;
-            }
-
-            drawFaceOverlays(faces) {
-                // Clear existing overlays
-                document.querySelectorAll('.face-overlay').forEach(el => el.remove());
-
-                faces.forEach((face, index) => {
-                    this.createFaceOverlay(face, index);
+                // Batch DOM updates for better performance
+                requestAnimationFrame(() => {
+                    this.facesDetectedEl.textContent = totalFaces;
+                    this.identifiedCountEl.textContent = identifiedFaces;
                 });
             }
 
-            createFaceOverlay(face, index) {
+            drawFaceOverlays(faces) {
+                // Use DocumentFragment for efficient DOM updates
+                const fragment = document.createDocumentFragment();
+                
+                // Clear existing overlays efficiently
+                const existingOverlays = document.querySelectorAll('.face-overlay');
+                existingOverlays.forEach(el => el.remove());
+
+                faces.forEach((face, index) => {
+                    const overlay = this.createFaceOverlayElement(face, index);
+                    fragment.appendChild(overlay);
+                });
+
+                // Single DOM update
+                const videoContainer = this.video.parentElement;
+                videoContainer.appendChild(fragment);
+            }
+
+            createFaceOverlayElement(face, index) {
                 const bbox = face.bbox;
                 const identification = face.identification;
 
                 // Calculate position relative to video element
                 const videoRect = this.video.getBoundingClientRect();
-                const containerRect = this.video.parentElement.getBoundingClientRect();
+                const videoWidth = this.video.videoWidth;
+                const videoHeight = this.video.videoHeight;
 
-                const scaleX = videoRect.width / this.video.videoWidth;
-                const scaleY = videoRect.height / this.video.videoHeight;
+                // bbox format is [x1, y1, x2, y2]
+                const [x1, y1, x2, y2] = bbox;
+                
+                const scaleX = videoRect.width / videoWidth;
+                const scaleY = videoRect.height / videoHeight;
 
-                const x = bbox.x * scaleX;
-                const y = bbox.y * scaleY;
-                const width = bbox.width * scaleX;
-                const height = bbox.height * scaleY;
+                // Since the video is visually flipped but the labels should follow the visual positioning,
+                // we use the coordinates directly as they come from the flipped canvas
+                const x = x1 * scaleX;
+                const y = y1 * scaleY;
+                const width = (x2 - x1) * scaleX;
+                const height = (y2 - y1) * scaleY;
 
-                // Create overlay element
+                // Create overlay element (invisible container)
                 const overlay = document.createElement('div');
                 overlay.className = 'face-overlay';
                 overlay.style.left = x + 'px';
@@ -399,20 +490,36 @@
                 overlay.style.width = width + 'px';
                 overlay.style.height = height + 'px';
 
-                // Create label
+                // Create label with dynamic sizing based on face size
                 const label = document.createElement('div');
                 label.className = 'face-label';
+                
+                // Calculate font size based on face size (smaller and more compact)
+                const avgFaceSize = (width + height) / 2;
+                const fontSize = Math.max(8, Math.min(14, avgFaceSize / 8));
+                label.style.fontSize = fontSize + 'px';
 
                 if (identification && identification.person_id !== 'unknown') {
                     const confidence = Math.round(identification.similarity_score * 100);
-                    label.textContent = `${identification.person_name} (${confidence}%)`;
+                    const personName = identification.person_name || 'Identified';
+                    label.textContent = `${personName} (${confidence}%)`;
+                    
+                    // Add confidence-based styling
+                    if (confidence >= 80) {
+                        label.classList.add('high-confidence');
+                    } else if (confidence >= 60) {
+                        label.classList.add('medium-confidence');
+                    } else {
+                        label.classList.add('low-confidence');
+                    }
                 } else {
-                    label.className += ' unknown';
+                    overlay.classList.add('unknown-face');
+                    label.classList.add('unknown');
                     label.textContent = 'Unknown';
                 }
 
                 overlay.appendChild(label);
-                this.video.parentElement.appendChild(overlay);
+                return overlay;
             }
 
             updateFPS() {
@@ -443,7 +550,8 @@
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            new OptimizedFaceRecognition();
+            const faceRecognition = new OptimizedFaceRecognition();
+            console.log('Face recognition system initialized:', faceRecognition);
         });
     </script>
 </body>
