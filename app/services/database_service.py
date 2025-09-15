@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from app.models.face_record import Base, FaceRecord, FaceProcessingLog
-from app.config import Config
+from app.config_file import Config
 import faiss
 import pickle
 import os

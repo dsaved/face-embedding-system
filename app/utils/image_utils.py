@@ -178,8 +178,12 @@ def image_to_base64(image: np.ndarray) -> str:
         Base64 encoded string
     """
     try:
+        # Ensure proper data type and range
+        if image.dtype != np.uint8:
+            image = np.clip(image, 0, 255).astype(np.uint8)
+        
         # Convert BGR to RGB
-        if len(image.shape) == 3:
+        if len(image.shape) == 3 and image.shape[2] == 3:
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         else:
             image_rgb = image
@@ -189,7 +193,7 @@ def image_to_base64(image: np.ndarray) -> str:
         
         # Convert to base64
         buffer = io.BytesIO()
-        pil_image.save(buffer, format='JPEG')
+        pil_image.save(buffer, format='JPEG', quality=85)
         img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         
         return img_base64
@@ -203,31 +207,137 @@ def base64_to_image(base64_string: str) -> Optional[np.ndarray]:
     Convert base64 string to image.
     
     Args:
-        base64_string: Base64 encoded image string
+        base64_string: Base64 encoded image string (can include data URL prefix)
         
     Returns:
         Image as numpy array or None if failed
     """
     try:
+        # Handle data URL format (data:image/jpeg;base64,...)
+        if base64_string.startswith('data:'):
+            # Extract base64 part after comma
+            if ',' in base64_string:
+                base64_string = base64_string.split(',', 1)[1]
+            else:
+                logger.error("Invalid data URL format - missing comma separator")
+                return None
+        
+        # Remove any whitespace/newlines
+        base64_string = base64_string.strip().replace('\n', '').replace('\r', '')
+        
         # Decode base64
-        image_data = base64.b64decode(base64_string)
+        try:
+            image_data = base64.b64decode(base64_string)
+        except Exception as decode_error:
+            logger.error(f"Base64 decode error: {decode_error}")
+            return None
+        
+        # Validate decoded data
+        if len(image_data) == 0:
+            logger.error("Decoded image data is empty")
+            return None
         
         # Convert to PIL Image
-        pil_image = Image.open(io.BytesIO(image_data))
+        try:
+            pil_image = Image.open(io.BytesIO(image_data))
+            # Verify image can be loaded
+            pil_image.verify()
+            # Reopen for actual use (verify closes the image)
+            pil_image = Image.open(io.BytesIO(image_data))
+        except Exception as pil_error:
+            logger.error(f"PIL Image error: {pil_error}")
+            return None
         
-        # Convert to numpy array
+        # Convert to numpy array and ensure uint8 format
         image_array = np.array(pil_image)
         
-        # Convert RGB to BGR for OpenCV
-        if len(image_array.shape) == 3:
-            image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-        else:
-            image_bgr = image_array
+        # Ensure we have a valid image array
+        if image_array.size == 0:
+            logger.error("Converted image array is empty")
+            return None
         
-        return image_bgr
+        # Ensure proper data type and range for uint8
+        if image_array.dtype != np.uint8:
+            # Handle different data types
+            if image_array.dtype in [np.float32, np.float64]:
+                # If float, assume 0-1 range and scale to 0-255
+                if image_array.max() <= 1.0:
+                    image_array = (image_array * 255).astype(np.uint8)
+                else:
+                    # If float but > 1, clip and convert
+                    image_array = np.clip(image_array, 0, 255).astype(np.uint8)
+            else:
+                # For other types, clip to valid range and convert
+                image_array = np.clip(image_array, 0, 255).astype(np.uint8)
+        
+        # Additional safety check for uint8 range
+        image_array = np.clip(image_array, 0, 255).astype(np.uint8)
+        
+        # Handle different channel formats and convert to RGB for face_recognition compatibility
+        if len(image_array.shape) == 3:
+            if image_array.shape[2] == 4:  # RGBA
+                # Convert RGBA to RGB
+                image_rgb = cv2.cvtColor(image_array, cv2.COLOR_RGBA2RGB)
+            elif image_array.shape[2] == 3:  # Assume it's already RGB from PIL
+                image_rgb = image_array
+            else:
+                image_rgb = image_array
+        else:
+            # Grayscale - convert to RGB
+            image_rgb = cv2.cvtColor(image_array, cv2.COLOR_GRAY2RGB)
+        
+        logger.debug(f"Successfully converted base64 to image: {image_rgb.shape}, dtype: {image_rgb.dtype}")
+        return image_rgb
+        
     except Exception as e:
         logger.error(f"Error converting base64 to image: {e}")
         return None
+
+
+def base64_to_image_rgb(base64_string: str) -> Optional[np.ndarray]:
+    """
+    Convert base64 string to RGB image specifically for face_recognition library.
+    Optimized for speed with minimal validation.
+    
+    Args:
+        base64_string: Base64 encoded image string
+        
+    Returns:
+        RGB image as numpy array or None if failed
+    """
+    try:
+        # Fast path - skip extensive validation for speed
+        # Handle data URL format (data:image/jpeg;base64,...)
+        if base64_string.startswith('data:'):
+            # Extract base64 part after comma
+            comma_idx = base64_string.find(',')
+            if comma_idx != -1:
+                base64_string = base64_string[comma_idx + 1:]
+            else:
+                return None
+        
+        # Remove whitespace quickly
+        if '\n' in base64_string or '\r' in base64_string or ' ' in base64_string:
+            base64_string = base64_string.replace('\n', '').replace('\r', '').replace(' ', '')
+        
+        # Fast decode and convert directly
+        image_data = base64.b64decode(base64_string, validate=False)  # Skip validation for speed
+        
+        # Use cv2 for faster decoding (no PIL overhead)
+        nparr = np.frombuffer(image_data, np.uint8)
+        image_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image_bgr is None:
+            return None
+        
+        # Convert BGR to RGB for face_recognition
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        return image_rgb
+        
+    except Exception as e:
+        logger.error(f"Fast base64 to RGB conversion failed: {e}")
+        # Fallback to original method
+        return base64_to_image(base64_string)
 
 
 def validate_image_format(image_path: str) -> bool:

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from flask import request, jsonify, g
 from werkzeug.exceptions import RequestEntityTooLarge
 import redis
-from app.config import Config
+from app.config_file import Config
 
 # Setup logging
 security_logger = logging.getLogger('security')
@@ -360,8 +360,9 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
-    # More permissive CSP for demo page, strict for API endpoints
-    if request.endpoint in ['video.video_demo', 'video_demo', 'index'] or request.path in ['/video/demo', '/demo', '/']:
+    # More permissive CSP for demo pages and liveness detection, strict for API endpoints
+    if (request.endpoint in ['video.video_demo', 'video_demo', 'index', 'liveness_check'] or 
+        request.path in ['/video/demo', '/demo', '/', '/liveness']):
         # Allow inline styles/scripts and external CDN for demo functionality
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "

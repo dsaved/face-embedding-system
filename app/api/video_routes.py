@@ -58,7 +58,7 @@ def register_socketio_events():
     def handle_connect(auth):
         """Handle client connection."""
         try:
-            from app.config import Config
+            from app.config_file import Config
             
             # Only require API key if configured
             if Config.API_KEY_REQUIRED:
@@ -273,7 +273,7 @@ def register_socketio_events():
 def _validate_api_key(api_key: str) -> bool:
     """Validate API key for WebSocket connection."""
     try:
-        from app.config import Config
+        from app.config_file import Config
         return api_key == Config.API_KEY
     except Exception:
         return False
@@ -382,7 +382,7 @@ def disconnect_session(session_id: str):
 def get_video_config():
     """Get video processing configuration."""
     try:
-        from app.config import Config
+        from app.config_file import Config
         
         config = {
             'frame_skip': getattr(Config, 'VIDEO_FRAME_SKIP', 2),
@@ -410,7 +410,7 @@ def test_video_processing():
     try:
         # Get image from request (similar to existing face detection)
         from app.api.face_routes import get_image_from_request
-        from app.config import Config
+        from app.config_file import Config
         
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         

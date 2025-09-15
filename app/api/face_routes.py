@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 import time
 from app.services.face_processor import FaceProcessor, calculate_similarity
 from app.services.database_service import DatabaseService
-from app.config import Config
+from app.config_file import Config
 from app.security import (
     require_api_key, rate_limit, validate_input, audit_request,
     add_security_headers, log_security_event

@@ -179,10 +179,12 @@ class FaceTracker:
             tracker = cv2.TrackerCSRT_create()
             logger.debug(f"Created CSRT tracker")
             
-            # Ensure frame is in correct format (uint8)
+            # Ensure frame is in correct format (uint8) and clamp values
             if frame.dtype != np.uint8:
-                frame = frame.astype(np.uint8)
-                logger.debug(f"Converted frame to uint8")
+                # Clamp values to valid uint8 range before conversion
+                frame_clamped = np.clip(frame, 0, 255)
+                frame = frame_clamped.astype(np.uint8)
+                logger.debug(f"Converted frame to uint8 with clamping")
             
             success = tracker.init(frame, bbox)
             logger.debug(f"Tracker init result: {success}")

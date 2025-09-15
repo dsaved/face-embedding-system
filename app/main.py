@@ -5,7 +5,10 @@ import os
 import logging
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from app.config import Config
+
+# Import the Config class from the original config.py file
+# We need to use a different import path since we now have a config package
+from .config_file import Config
 from app.security import add_security_headers, log_security_event
 
 # Configure logging
@@ -101,6 +104,16 @@ def create_app():
         app.register_blueprint(video_bp, url_prefix='/video')
     except ImportError:
         logging.warning("Video routes not available")
+    
+    try:
+        from app.api.liveness_routes import liveness_bp, init_liveness_socketio
+        app.register_blueprint(liveness_bp)
+        
+        # Initialize liveness detection SocketIO handlers
+        if app.socketio:
+            init_liveness_socketio(app.socketio)
+    except ImportError:
+        logging.warning("Liveness detection routes not available")
 
     # Create directories
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
@@ -126,7 +139,8 @@ def create_app():
                 'video_health': '/api/v1/video/health',
                 'video_sessions': '/api/v1/video/sessions',
                 'websocket': '/socket.io/',
-                'video_demo': '/templates/video_demo.html'
+                'video_demo': '/templates/video_demo.html',
+                'liveness_check': '/liveness'
             })
         
         return jsonify({
@@ -179,6 +193,16 @@ def create_app():
                 return f.read()
         except FileNotFoundError:
             return jsonify({'error': 'Demo page not found'}), 404
+    
+    # Add route to serve liveness detection page
+    @app.route('/liveness')
+    def liveness_check():
+        """Serve the advanced liveness detection page."""
+        try:
+            with open('templates/liveness_check.html', 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            return jsonify({'error': 'Liveness check page not found'}), 404
 
     return app
 
