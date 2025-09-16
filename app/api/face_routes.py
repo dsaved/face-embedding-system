@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 ERROR_NO_IMAGE = 'No image provided or could not load image'
 ERROR_NO_FACES = 'No faces detected in image'
 ERROR_MULTIPLE_FACES = 'Multiple faces detected. Please provide image with single face'
-ERROR_MISSING_PARAMS = 'person_id and person_name are required'
-ERROR_MISSING_PERSON_ID = 'person_id is required'
+ERROR_MISSING_PARAMS = 'app_id, person_id and person_name are required'
+ERROR_MISSING_PERSON_ID = 'app_id and person_id are required'
+ERROR_MISSING_APP_ID = 'app_id is required'
+ERROR_INVALID_FACE_OWNERSHIP = 'Face does not belong to the specified person'
 
 def convert_numpy_types(obj):
     """Convert NumPy types to Python native types for JSON serialization."""
@@ -179,6 +181,7 @@ def detect_faces():
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         
         if image is None:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': ERROR_NO_IMAGE}), 400
         
         # Get optional parameters
@@ -249,6 +252,7 @@ def encode_faces():
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         
         if image is None:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': ERROR_NO_IMAGE}), 400
         
         # Process faces
@@ -301,12 +305,23 @@ def encode_faces():
 @audit_request
 def register_face():
     """
-    Register a new face identity in the database.
+    Register a new face identity in the database with enhanced validation.
     
     Expected input:
     - image file (multipart/form-data) or image_base64/image_path in JSON
-    - person_id: unique identifier
-    - person_name: name of the person
+    - app_id: application identifier (required)
+    - person_id: unique identifier within the app (required)
+    - person_name: name of the person (required)
+    - face_alias: optional alias for this face (e.g., "profile_pic", "id_photo")
+    - is_primary: whether this should be the primary face (default: false)
+    - validate_ownership: whether to validate against existing faces (default: true)
+    - similarity_threshold: minimum similarity for validation (default: 0.5, range: 0.0-1.0)
+    
+    Enhanced validation features:
+    - Multiple validation strategies (best match, average, statistical)
+    - Accepts same person with different angles, lighting, expressions
+    - Customizable similarity threshold for flexible validation
+    - Detailed error messages with suggestions
     
     Returns:
     - Registration result with face record ID
@@ -316,40 +331,78 @@ def register_face():
         
         # Get required parameters
         data = request.form if request.files else request.json
+        app_id = data.get('app_id')
         person_id = data.get('person_id')
         person_name = data.get('person_name')
+        face_alias = data.get('face_alias')
+        is_primary_value = data.get('is_primary', 'false')
+        is_primary = str(is_primary_value).lower() == 'true' if isinstance(is_primary_value, str) else bool(is_primary_value)
+        validate_ownership_value = data.get('validate_ownership', 'true')
+        validate_ownership = str(validate_ownership_value).lower() == 'true' if isinstance(validate_ownership_value, str) else bool(validate_ownership_value)
         
-        if not person_id or not person_name:
+        # Enhanced: Allow custom similarity threshold for face validation
+        similarity_threshold = float(data.get('similarity_threshold', 0.5))  # Lowered default from 0.7 to 0.5
+        
+        if not app_id or not person_id or not person_name:
             return jsonify({'error': ERROR_MISSING_PARAMS}), 400
         
         # Get image from request
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         
         if image is None:
+            # Clean up temporary file before returning error  
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': ERROR_NO_IMAGE}), 400
         
         processed_faces = get_face_processor().process_image(image, Config.FACE_CONFIDENCE_THRESHOLD)
         
         if not processed_faces:
+            # Clean up temporary file before returning error
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': ERROR_NO_FACES}), 400
         
         if len(processed_faces) > 1:
+            # Clean up temporary file before returning error
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': ERROR_MULTIPLE_FACES}), 400
         
         # Get the face data
         face_data = processed_faces[0]
         
-        # Save to database (use a placeholder for image_path since we're not storing the image)
+        # Validate face ownership if requested and person has existing faces
+        if validate_ownership:
+            is_valid = get_db_service().validate_face_ownership(
+                app_id=app_id,
+                person_id=person_id,
+                new_embedding=face_data['embedding'],
+                similarity_threshold=similarity_threshold  # Use custom threshold
+            )
+            if not is_valid:
+                # Check if person has existing faces
+                existing_faces = get_db_service().get_person_faces(app_id, person_id)
+                if existing_faces:  # Only reject if person already has faces
+                    # Clean up temporary file before returning error
+                    cleanup_temp_file(temp_file_path, should_cleanup)
+                    return jsonify({
+                        'error': ERROR_INVALID_FACE_OWNERSHIP,
+                        'suggestion': 'Try lowering similarity_threshold or set validate_ownership=false',
+                        'similarity_threshold_used': similarity_threshold
+                    }), 400
+        
+        # Save to database
         input_source = temp_file_path if temp_file_path else "base64_image"
         face_record = get_db_service().add_face_record(
+            app_id=app_id,
             person_id=person_id,
             person_name=person_name,
+            face_alias=face_alias,
             embedding=face_data['embedding'],
             confidence_score=float(face_data['confidence']),
             image_path=input_source,
             bbox=convert_numpy_types(face_data['bbox']),
             landmarks=convert_numpy_types(face_data['landmarks']),
-            encoding_model=Config.FACE_ENCODING_MODEL
+            encoding_model=Config.FACE_ENCODING_MODEL,
+            is_primary=is_primary
         )
         
         processing_time = time.time() - start_time
@@ -361,7 +414,7 @@ def register_face():
             processing_time=processing_time,
             faces_detected=1,
             success=True,
-            metadata={'person_id': person_id, 'person_name': person_name}
+            metadata={'app_id': app_id, 'person_id': person_id, 'person_name': person_name, 'face_alias': face_alias}
         )
         
         # Clean up temporary file if needed
@@ -371,8 +424,11 @@ def register_face():
             'success': True,
             'message': f'Face registered successfully for {person_name}',
             'face_record_id': face_record.id,
+            'app_id': app_id,
             'person_id': person_id,
             'person_name': person_name,
+            'face_alias': face_alias,
+            'is_primary': is_primary,
             'confidence_score': face_data['confidence'],
             'processing_time': processing_time
         }))
@@ -397,6 +453,7 @@ def identify_face():
     
     Expected input:
     - image file (multipart/form-data) or image_base64/image_path in JSON
+    - app_id: application identifier (optional, if not provided searches all apps)
     - Optional: similarity_threshold
     
     Returns:
@@ -405,20 +462,24 @@ def identify_face():
     try:
         start_time = time.time()
         
+        # Get parameters
+        data = request.form if request.files else request.json or {}
+        app_id = data.get('app_id')  # Optional for backward compatibility
+        
         # Get image from request
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         
         if image is None:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'No image provided or could not load image'}), 400
         
         # Get optional parameters
-        similarity_threshold = None
-        if request.is_json:
-            similarity_threshold = request.json.get('similarity_threshold')
+        similarity_threshold = data.get('similarity_threshold')
         
         processed_faces = get_face_processor().process_image(image, Config.FACE_CONFIDENCE_THRESHOLD)
         
         if not processed_faces:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'No faces detected in image'}), 400
         
         # Identify each face
@@ -509,6 +570,7 @@ def verify_face():
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         
         if image is None:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'No image provided or could not load image'}), 400
         
         # Get optional parameters
@@ -517,9 +579,11 @@ def verify_face():
         processed_faces = get_face_processor().process_image(image, Config.FACE_CONFIDENCE_THRESHOLD)
         
         if not processed_faces:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'No faces detected in image'}), 400
         
         if len(processed_faces) > 1:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'Multiple faces detected. Please provide image with single face'}), 400
         
         # Verify face
@@ -588,6 +652,7 @@ def search_similar_faces():
         image, temp_file_path, should_cleanup = get_image_from_request(request)
         
         if image is None:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'No image provided or could not load image'}), 400
         
         # Get optional parameters
@@ -600,6 +665,7 @@ def search_similar_faces():
         processed_faces = get_face_processor().process_image(image, Config.FACE_CONFIDENCE_THRESHOLD)
         
         if not processed_faces:
+            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': 'No faces detected in image'}), 400
         
         # Search for similar faces (use first detected face)
@@ -651,6 +717,10 @@ def search_similar_faces():
     
     except Exception as e:
         logger.error(f"Face search error: {e}")
+        # Clean up temporary file if needed (even on error)
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
+        
         return jsonify({'error': str(e)}), 500
 
 
@@ -755,4 +825,198 @@ def delete_face_record(face_id: int):
     
     except Exception as e:
         logger.error(f"Face deletion error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@face_api.route('/person/faces', methods=['GET'])
+@require_api_key
+def get_person_faces():
+    """
+    Get all faces for a specific person in an app.
+    
+    Expected parameters:
+    - app_id: application identifier (required)
+    - person_id: person identifier (required)
+    
+    Returns:
+    - List of face records for the person
+    """
+    try:
+        app_id = request.args.get('app_id')
+        person_id = request.args.get('person_id')
+        
+        if not app_id or not person_id:
+            return jsonify({'error': ERROR_MISSING_PERSON_ID}), 400
+        
+        faces = get_db_service().get_person_faces(app_id, person_id)
+        
+        return jsonify({
+            'success': True,
+            'app_id': app_id,
+            'person_id': person_id,
+            'face_count': len(faces),
+            'faces': [face.to_dict() for face in faces]
+        })
+    
+    except Exception as e:
+        logger.error(f"Get person faces error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@face_api.route('/app/persons', methods=['GET'])
+@require_api_key  
+def get_app_persons():
+    """
+    Get all persons in an app with their face counts.
+    
+    Expected parameters:
+    - app_id: application identifier (required)
+    
+    Returns:
+    - List of persons with face counts
+    """
+    try:
+        app_id = request.args.get('app_id')
+        
+        if not app_id:
+            return jsonify({'error': ERROR_MISSING_APP_ID}), 400
+        
+        persons = get_db_service().get_app_persons(app_id)
+        
+        return jsonify({
+            'success': True,
+            'app_id': app_id,
+            'person_count': len(persons),
+            'persons': persons
+        })
+    
+    except Exception as e:
+        logger.error(f"Get app persons error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@face_api.route('/person/primary', methods=['PUT'])
+@require_api_key
+def set_primary_face():
+    """
+    Set a face as the primary face for a person.
+    
+    Expected input (JSON):
+    - app_id: application identifier (required)
+    - person_id: person identifier (required)
+    - face_record_id: face record ID to set as primary (required)
+    
+    Returns:
+    - Success status
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'JSON data required'}), 400
+        
+        app_id = data.get('app_id')
+        person_id = data.get('person_id')
+        face_record_id = data.get('face_record_id')
+        
+        if not app_id or not person_id or not face_record_id:
+            return jsonify({'error': 'app_id, person_id, and face_record_id are required'}), 400
+        
+        success = get_db_service().set_primary_face(app_id, person_id, face_record_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Face {face_record_id} set as primary for person {person_id}'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to set primary face. Check if face exists and belongs to the person.'
+            }), 400
+    
+    except Exception as e:
+        logger.error(f"Set primary face error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@face_api.route('/identify/best-match', methods=['POST'])
+@require_api_key
+@rate_limit(limit=40, window=60)
+@validate_input('image')
+@audit_request
+def identify_best_match():
+    """
+    Identify faces with best match per person in an app.
+    
+    Expected input:
+    - image file (multipart/form-data) or image_base64/image_path in JSON
+    - app_id: application identifier (required)
+    - Optional: similarity_threshold (default: 0.8)
+    
+    Returns:
+    - Best matching face for each person found
+    """
+    try:
+        start_time = time.time()
+        
+        # Get parameters
+        data = request.form if request.files else request.json
+        app_id = data.get('app_id')
+        similarity_threshold = float(data.get('similarity_threshold', 0.8))
+        
+        if not app_id:
+            return jsonify({'error': ERROR_MISSING_APP_ID}), 400
+        
+        # Get image from request
+        image, temp_file_path, should_cleanup = get_image_from_request(request)
+        
+        if image is None:
+            cleanup_temp_file(temp_file_path, should_cleanup)
+            return jsonify({'error': ERROR_NO_IMAGE}), 400
+        
+        processed_faces = get_face_processor().process_image(image, Config.FACE_CONFIDENCE_THRESHOLD)
+        
+        if not processed_faces:
+            cleanup_temp_file(temp_file_path, should_cleanup)
+            return jsonify({'error': ERROR_NO_FACES}), 400
+        
+        # Use the first detected face for identification
+        query_embedding = processed_faces[0]['embedding']
+        
+        # Find best matches per person
+        best_matches = get_db_service().find_best_match_per_person(
+            app_id=app_id,
+            query_embedding=query_embedding,
+            similarity_threshold=similarity_threshold
+        )
+        
+        processing_time = time.time() - start_time
+        
+        # Log operation
+        get_db_service().log_operation(
+            operation_type='identify_best_match',
+            input_source=temp_file_path if temp_file_path else "base64_image",
+            processing_time=processing_time,
+            faces_detected=len(processed_faces),
+            success=True,
+            metadata={'app_id': app_id, 'matches_found': len(best_matches)}
+        )
+        
+        # Clean up temporary file if needed
+        cleanup_temp_file(temp_file_path, should_cleanup)
+        
+        return jsonify(convert_numpy_types({
+            'success': True,
+            'app_id': app_id,
+            'faces_detected': len(processed_faces),
+            'matches_found': len(best_matches),
+            'similarity_threshold': similarity_threshold,
+            'best_matches': best_matches,
+            'processing_time': processing_time
+        }))
+    
+    except Exception as e:
+        logger.error(f"Best match identification error: {e}")
+        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
+            cleanup_temp_file(temp_file_path, should_cleanup)
         return jsonify({'error': str(e)}), 500

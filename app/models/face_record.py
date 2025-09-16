@@ -18,32 +18,38 @@ class FaceRecord(Base):
     __tablename__ = 'face_records'
     
     id = Column(Integer, primary_key=True)
+    app_id = Column(String(100), nullable=False, index=True)  # Application identifier
     person_id = Column(String(100), nullable=False, index=True)
     person_name = Column(String(255), nullable=False)
+    face_alias = Column(String(255))  # Optional alias for this specific face (e.g., "profile_pic", "id_photo")
     embedding = Column(Vector(512), nullable=False)  # 512-dimensional vector
     confidence_score = Column(Float, default=0.0)
     image_path = Column(String(500))
     face_bbox = Column(Text)  # JSON string storing bounding box coordinates
     landmarks = Column(Text)  # JSON string storing facial landmarks
     encoding_model = Column(String(50), default='facenet')
+    is_primary = Column(Boolean, default=False)  # Mark primary face for person
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):
-        return f"<FaceRecord(id={self.id}, person_id='{self.person_id}', name='{self.person_name}')>"
+        return f"<FaceRecord(id={self.id}, app_id='{self.app_id}', person_id='{self.person_id}', name='{self.person_name}')>"
     
     def to_dict(self):
         """Convert model to dictionary."""
         return {
             'id': self.id,
+            'app_id': self.app_id,
             'person_id': self.person_id,
             'person_name': self.person_name,
+            'face_alias': self.face_alias,
             'confidence_score': self.confidence_score,
             'image_path': self.image_path,
             'face_bbox': json.loads(self.face_bbox) if self.face_bbox else None,
             'landmarks': json.loads(self.landmarks) if self.landmarks else None,
             'encoding_model': self.encoding_model,
+            'is_primary': self.is_primary,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None

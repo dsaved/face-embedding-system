@@ -477,31 +477,49 @@ class VideoStreamProcessor:
                 if cached_result:
                     tracked_face.identification = cached_result
                 else:
-                    # Perform recognition
-                    logger.debug(f"Searching for similar faces with embedding shape: {tracked_face.embedding.shape}")
+                    # Perform enhanced recognition using best match per person
+                    logger.debug(f"Searching for best matches per person with embedding shape: {tracked_face.embedding.shape}")
                     logger.debug(f"Query embedding sample: {tracked_face.embedding[:5]}")
                     logger.debug(f"Query embedding stats: min={tracked_face.embedding.min():.6f}, max={tracked_face.embedding.max():.6f}, mean={tracked_face.embedding.mean():.6f}, norm={np.linalg.norm(tracked_face.embedding):.6f}")
-                    similar_faces = self.db_service.find_similar_faces(
-                        tracked_face.embedding, top_k=1, similarity_threshold=0.6
-                    )
-                    logger.debug(f"Found {len(similar_faces) if similar_faces else 0} similar faces")
                     
-                    if similar_faces:
-                        face_record, similarity_score = similar_faces[0]
-                        logger.debug(f"Best match: person_id={face_record.person_id}, name={face_record.person_name}, similarity={similarity_score}")
-                        identification = {
-                            'person_id': face_record.person_id,
-                            'person_name': face_record.person_name,
-                            'similarity_score': float(similarity_score),
-                            'face_record_id': face_record.id
-                        }
+                    # Use enhanced best match per person - try default_app first, then all apps
+                    best_matches = self.db_service.find_best_match_per_person(
+                        app_id="default_app",  # Default app for video processing
+                        query_embedding=tracked_face.embedding,
+                        similarity_threshold=0.5  # Use enhanced lower threshold
+                    )
+                    
+                    # If no matches in default_app, try legacy method for backward compatibility
+                    if not best_matches:
+                        similar_faces = self.db_service.find_similar_faces(
+                            tracked_face.embedding, top_k=1, similarity_threshold=0.5
+                        )
+                        if similar_faces:
+                            face_record, similarity_score = similar_faces[0]
+                            logger.debug(f"Legacy match: person_id={face_record.person_id}, name={face_record.person_name}, similarity={similarity_score}")
+                            identification = {
+                                'person_id': face_record.person_id,
+                                'person_name': face_record.person_name,
+                                'similarity_score': float(similarity_score),
+                                'face_record_id': face_record.id
+                            }
+                        else:
+                            logger.debug("No similar faces found above threshold 0.5")
+                            identification = {
+                                'person_id': 'unknown',
+                                'person_name': 'Unknown',
+                                'similarity_score': 0.0,
+                                'face_record_id': None
+                            }
                     else:
-                        logger.debug("No similar faces found above threshold 0.6")
+                        # Use best match result (only one per person)
+                        best_match = best_matches[0]
+                        logger.debug(f"Enhanced best match: person_id={best_match['person_id']}, name={best_match['person_name']}, similarity={best_match['similarity']}")
                         identification = {
-                            'person_id': 'unknown',
-                            'person_name': 'Unknown Person',
-                            'similarity_score': 0.0,
-                            'face_record_id': None
+                            'person_id': best_match['person_id'],
+                            'person_name': best_match['person_name'],
+                            'similarity_score': float(best_match['similarity']),
+                            'face_record_id': best_match['face_record_id']
                         }
                     
                     tracked_face.identification = identification
