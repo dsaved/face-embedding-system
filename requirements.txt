@@ -30,6 +30,10 @@ face-recognition==1.3.0
 scikit-learn==1.3.0
 # faiss-cpu==1.7.4  # Can be heavy to build
 
+# Liveness Detection Dependencies
+mediapipe==0.10.7  # For additional face landmark detection
+dlib==19.24.2  # Required for advanced facial analysis
+
 # Security & Performance
 flask-limiter==3.5.0
 flask-cors==4.0.0

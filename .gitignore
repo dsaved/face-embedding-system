@@ -22,3 +22,6 @@ htmlcov/
 # Logs
 *.log
 logs/
+instruction-photos/
+ecosystem.config.js
+passport_duplicate_detection/*

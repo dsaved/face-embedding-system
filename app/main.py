@@ -5,7 +5,10 @@ import os
 import logging
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from app.config import Config
+
+# Import the Config class from the original config.py file
+# We need to use a different import path since we now have a config package
+from .config_file import Config
 from app.security import add_security_headers, log_security_event
 
 # Configure logging
@@ -18,6 +21,8 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+logger = logging.getLogger(__name__)
 
 # Configure audit logging
 audit_logger = logging.getLogger('audit')
@@ -101,6 +106,16 @@ def create_app():
         app.register_blueprint(video_bp, url_prefix='/video')
     except ImportError:
         logging.warning("Video routes not available")
+    
+    try:
+        from app.api.liveness_routes import liveness_bp, init_liveness_socketio
+        app.register_blueprint(liveness_bp)
+        
+        # Initialize liveness detection SocketIO handlers
+        if app.socketio:
+            init_liveness_socketio(app.socketio)
+    except ImportError:
+        logging.warning("Liveness detection routes not available")
 
     # Create directories
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
@@ -126,7 +141,8 @@ def create_app():
                 'video_health': '/api/v1/video/health',
                 'video_sessions': '/api/v1/video/sessions',
                 'websocket': '/socket.io/',
-                'video_demo': '/templates/video_demo.html'
+                'video_demo': '/templates/video_demo.html',
+                'liveness_check': '/liveness'
             })
         
         return jsonify({
@@ -179,6 +195,16 @@ def create_app():
                 return f.read()
         except FileNotFoundError:
             return jsonify({'error': 'Demo page not found'}), 404
+    
+    # Add route to serve liveness detection page
+    @app.route('/liveness')
+    def liveness_check():
+        """Serve the advanced liveness detection page."""
+        try:
+            with open('templates/liveness_check.html', 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            return jsonify({'error': 'Liveness check page not found'}), 404
 
     return app
 
@@ -187,8 +213,13 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    # For development - use socketio.run if available, otherwise regular Flask run
-    if hasattr(app, 'socketio') and app.socketio:
-        app.socketio.run(app, host="0.0.0.0", port=5001, debug=Config.DEBUG)
-    else:
-        app.run(host="0.0.0.0", port=5001, debug=Config.DEBUG)
+    try:
+        logger.info("Starting Face Embedding System...")
+        logger.info(f"Server will run on http://0.0.0.0:{Config.PORT}")
+        logger.info(f"Debug mode: {Config.DEBUG}")
+        
+        # Allow unsafe Werkzeug for PM2 deployment
+        app.socketio.run(app, host="0.0.0.0", port=Config.PORT, debug=Config.DEBUG, allow_unsafe_werkzeug=True)
+    except Exception as e:
+        logger.error(f"Failed to start server: {e}")
+        raise

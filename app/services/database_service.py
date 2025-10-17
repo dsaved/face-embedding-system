@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from app.models.face_record import Base, FaceRecord, FaceProcessingLog
-from app.config import Config
+from app.config_file import Config
 import faiss
 import pickle
 import os
@@ -127,15 +127,17 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to save FAISS index: {e}")
     
-    def add_face_record(self, person_id: str, person_name: str, embedding: np.ndarray,
+    def add_face_record(self, app_id: str, person_id: str, person_name: str, embedding: np.ndarray,
                        confidence_score: float = 0.0, image_path: str = None,
                        bbox: Dict = None, landmarks: Dict = None,
-                       encoding_model: str = "facenet") -> FaceRecord:
+                       encoding_model: str = "facenet", face_alias: str = None,
+                       is_primary: bool = False) -> FaceRecord:
         """
         Add a new face record to the database.
         
         Args:
-            person_id: Unique identifier for the person
+            app_id: Application identifier
+            person_id: Unique identifier for the person within the app
             person_name: Name of the person
             embedding: Face embedding vector
             confidence_score: Detection confidence score
@@ -143,20 +145,33 @@ class DatabaseService:
             bbox: Face bounding box coordinates
             landmarks: Facial landmarks
             encoding_model: Model used for encoding
+            face_alias: Optional alias for this face
+            is_primary: Whether this is the primary face for the person
             
         Returns:
             Created FaceRecord instance
         """
         session = self.Session()
         try:
+            # If this is marked as primary, unset any existing primary for this person
+            if is_primary:
+                session.query(FaceRecord).filter(
+                    FaceRecord.app_id == app_id,
+                    FaceRecord.person_id == person_id,
+                    FaceRecord.is_primary == True
+                ).update({'is_primary': False})
+            
             # Create new record
             record = FaceRecord(
+                app_id=app_id,
                 person_id=person_id,
                 person_name=person_name,
+                face_alias=face_alias,
                 embedding=embedding.tolist(),
                 confidence_score=confidence_score,
                 image_path=image_path,
-                encoding_model=encoding_model
+                encoding_model=encoding_model,
+                is_primary=is_primary
             )
             
             if bbox:
@@ -470,3 +485,264 @@ class DatabaseService:
             return False
         finally:
             session.close()
+
+    def get_person_faces(self, app_id: str, person_id: str) -> List[FaceRecord]:
+        """
+        Get all face records for a specific person in an app.
+        
+        Args:
+            app_id: Application identifier
+            person_id: Person identifier
+            
+        Returns:
+            List of FaceRecord instances
+        """
+        session = self.Session()
+        try:
+            records = session.query(FaceRecord).filter(
+                FaceRecord.app_id == app_id,
+                FaceRecord.person_id == person_id,
+                FaceRecord.is_active == True
+            ).order_by(FaceRecord.is_primary.desc(), FaceRecord.created_at).all()
+            return records
+        except Exception as e:
+            logger.error(f"Failed to get person faces: {e}")
+            return []
+        finally:
+            session.close()
+
+    def get_app_persons(self, app_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all persons in an app with their face counts.
+        
+        Args:
+            app_id: Application identifier
+            
+        Returns:
+            List of person dictionaries with face counts
+        """
+        session = self.Session()
+        try:
+            # Get distinct persons with face counts
+            result = session.query(
+                FaceRecord.person_id,
+                FaceRecord.person_name,
+                session.query(FaceRecord.id).filter(
+                    FaceRecord.app_id == app_id,
+                    FaceRecord.person_id == FaceRecord.person_id,
+                    FaceRecord.is_active == True
+                ).count().label('face_count')
+            ).filter(
+                FaceRecord.app_id == app_id,
+                FaceRecord.is_active == True
+            ).group_by(FaceRecord.person_id, FaceRecord.person_name).all()
+            
+            persons = []
+            for person_id, person_name, face_count in result:
+                # Get primary face info
+                primary_face = session.query(FaceRecord).filter(
+                    FaceRecord.app_id == app_id,
+                    FaceRecord.person_id == person_id,
+                    FaceRecord.is_primary == True,
+                    FaceRecord.is_active == True
+                ).first()
+                
+                persons.append({
+                    'person_id': person_id,
+                    'person_name': person_name,
+                    'face_count': face_count,
+                    'primary_face_id': primary_face.id if primary_face else None,
+                    'has_primary': primary_face is not None
+                })
+            
+            return persons
+        except Exception as e:
+            logger.error(f"Failed to get app persons: {e}")
+            return []
+        finally:
+            session.close()
+
+    def set_primary_face(self, app_id: str, person_id: str, face_record_id: int) -> bool:
+        """
+        Set a face as the primary face for a person.
+        
+        Args:
+            app_id: Application identifier
+            person_id: Person identifier
+            face_record_id: Face record ID to set as primary
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        session = self.Session()
+        try:
+            # First, unset any existing primary face
+            session.query(FaceRecord).filter(
+                FaceRecord.app_id == app_id,
+                FaceRecord.person_id == person_id,
+                FaceRecord.is_primary == True
+            ).update({'is_primary': False})
+            
+            # Set the new primary face
+            result = session.query(FaceRecord).filter(
+                FaceRecord.app_id == app_id,
+                FaceRecord.person_id == person_id,
+                FaceRecord.id == face_record_id,
+                FaceRecord.is_active == True
+            ).update({'is_primary': True})
+            
+            session.commit()
+            return result > 0
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to set primary face: {e}")
+            return False
+        finally:
+            session.close()
+
+    def find_best_match_per_person(self, app_id: str, query_embedding: np.ndarray, 
+                                  similarity_threshold: float = 0.8) -> List[Dict[str, Any]]:
+        """
+        Find the best matching face for each person in the app.
+        
+        Args:
+            app_id: Application identifier
+            query_embedding: Query face embedding
+            similarity_threshold: Minimum similarity threshold
+            
+        Returns:
+            List of best matches per person
+        """
+        session = self.Session()
+        try:
+            # Get all active faces for the app
+            faces = session.query(FaceRecord).filter(
+                FaceRecord.app_id == app_id,
+                FaceRecord.is_active == True
+            ).all()
+            
+            if not faces:
+                return []
+            
+            # Calculate similarities and group by person
+            person_matches = {}
+            for face in faces:
+                try:
+                    face_embedding = np.array(face.embedding, dtype=np.float32)
+                    similarity = self._calculate_cosine_similarity(query_embedding, face_embedding)
+                    
+                    if similarity >= similarity_threshold:
+                        if face.person_id not in person_matches or similarity > person_matches[face.person_id]['similarity']:
+                            person_matches[face.person_id] = {
+                                'face_record_id': face.id,
+                                'person_id': face.person_id,
+                                'person_name': face.person_name,
+                                'face_alias': face.face_alias,
+                                'similarity': similarity,
+                                'confidence_score': face.confidence_score,
+                                'is_primary': face.is_primary
+                            }
+                except Exception as e:
+                    logger.warning(f"Error calculating similarity for face {face.id}: {e}")
+                    continue
+            
+            # Return sorted by similarity
+            return sorted(person_matches.values(), key=lambda x: x['similarity'], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Failed to find best matches: {e}")
+            return []
+        finally:
+            session.close()
+
+    def validate_face_ownership(self, app_id: str, person_id: str, new_embedding: np.ndarray,
+                               similarity_threshold: float = 0.5) -> bool:
+        """
+        Validate that a new face actually belongs to the specified person.
+        
+        Enhanced validation with multiple strategies:
+        1. Average similarity check with lower threshold for same person variations
+        2. Best match check (highest similarity)
+        3. Statistical validation using multiple existing faces
+        
+        Args:
+            app_id: Application identifier
+            person_id: Person identifier
+            new_embedding: New face embedding to validate
+            similarity_threshold: Minimum similarity to existing faces (lowered from 0.7 to 0.5)
+            
+        Returns:
+            True if the face likely belongs to the person, False otherwise
+        """
+        session = self.Session()
+        try:
+            existing_faces = session.query(FaceRecord).filter(
+                FaceRecord.app_id == app_id,
+                FaceRecord.person_id == person_id,
+                FaceRecord.is_active == True
+            ).all()
+            
+            if not existing_faces:
+                # No existing faces, so we can't validate
+                return True
+            
+            similarities = []
+            
+            # Check similarity against existing faces
+            for face in existing_faces:
+                try:
+                    face_embedding = np.array(face.embedding, dtype=np.float32)
+                    similarity = self._calculate_cosine_similarity(new_embedding, face_embedding)
+                    similarities.append(similarity)
+                except Exception as e:
+                    logger.warning(f"Error validating face ownership for face {face.id}: {e}")
+                    continue
+            
+            if not similarities:
+                return False
+            
+            # Enhanced validation strategies
+            max_similarity = max(similarities)
+            avg_similarity = sum(similarities) / len(similarities)
+            
+            # Strategy 1: If best match is above threshold, accept
+            if max_similarity >= similarity_threshold:
+                logger.info(f"Face validation passed - best match: {max_similarity:.3f}")
+                return True
+            
+            # Strategy 2: If we have multiple faces and average is reasonable, accept
+            if len(similarities) >= 2 and avg_similarity >= (similarity_threshold * 0.8):
+                logger.info(f"Face validation passed - average similarity: {avg_similarity:.3f} across {len(similarities)} faces")
+                return True
+            
+            # Strategy 3: Check if this could be the same person with different conditions
+            # Accept if similarity is above a lower threshold (0.4) for same person variations
+            if max_similarity >= 0.4:
+                logger.info(f"Face validation passed - likely same person with variations: {max_similarity:.3f}")
+                return True
+            
+            logger.warning(f"Face validation failed - max: {max_similarity:.3f}, avg: {avg_similarity:.3f}, threshold: {similarity_threshold}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to validate face ownership: {e}")
+            return False
+        finally:
+            session.close()
+
+    def _calculate_cosine_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+        """Calculate cosine similarity between two embeddings."""
+        try:
+            # Normalize embeddings
+            norm1 = np.linalg.norm(embedding1)
+            norm2 = np.linalg.norm(embedding2)
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            # Calculate cosine similarity
+            similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
+            return float(similarity)
+        except Exception as e:
+            logger.error(f"Error calculating cosine similarity: {e}")
+            return 0.0

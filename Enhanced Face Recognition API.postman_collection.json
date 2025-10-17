@@ -1,0 +1,1194 @@
+{
+	"info": {
+		"_postman_id": "965e2da3-e7f9-4e6e-9824-08a8325c7ac9",
+		"name": "Enhanced Face Recognition API",
+		"description": "# 🎯 Enhanced Face Recognition API Collection\n\nStreamlined collection for multi-tenant face recognition system with enhanced features:\n\n## 🔧 **Core Features**\n- **Enhanced Registration**: Multi-app face registration with aliases\n- **Enhanced Identification**: Best match per person logic\n- **Face Management**: Person and face lifecycle management\n- **Multi-App Support**: Application-level isolation\n- **Database Management**: Stats and record cleanup\n\n## 🆕 **Enhanced Capabilities**\n- **Multiple Faces per Person**: Register multiple photos per individual\n- **Application Isolation**: Separate face databases per app (app_id)\n- **Face Aliases**: Descriptive names (\"profile_photo\", \"id_document\")\n- **Primary Face Management**: Designate best representative face\n- **Best Match Logic**: One result per person (no duplicates)\n\n## 📥 **Input Methods**\nAll endpoints support:\n1. **File Upload** (multipart/form-data)\n2. **Base64 Image** (JSON with `image_base64`)\n\n## 🏗️ **Architecture**\n- **Backend**: Flask with PostgreSQL + pgvector\n- **Face Models**: FaceNet with FAISS indexing\n- **Multi-Tenancy**: App-level data isolation\n- **Performance**: Optimized for multiple face scenarios\n\n## 🚀 **Getting Started**\n1. Set the `base_url` variable to your API endpoint\n2. Test the `/health` endpoint\n3. Register faces with `app_id` using enhanced registration\n4. Use enhanced identification for best match results\n5. Manage faces with person/face management endpoints\n\n## 🔐 **Response Format**\n```json\n{\n  \"success\": true/false,\n  \"app_id\": \"your_app_id\",\n  \"data\": {...},\n  \"processing_time\": 0.25\n}\n```",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "7577488"
+	},
+	"item": [
+		{
+			"name": "System",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has status field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "**Health Check Endpoint**\n\nChecks the overall system health including:\n- Database connectivity\n- FAISS index status\n- Redis cache status\n- Face model loading status\n\n**Returns:**\n- System status\n- Database connection info\n- Number of face records\n- Current operation mode"
+					},
+					"response": []
+				}
+			],
+			"description": "System health and status endpoints"
+		},
+		{
+			"name": "Enhanced Registration",
+			"item": [
+				{
+					"name": "Register Face with Enhanced Metadata (File Upload)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has face_record_id\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('face_record_id');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "app_id",
+									"value": "mobile_app",
+									"type": "text"
+								},
+								{
+									"key": "person_id",
+									"value": "john_001",
+									"type": "text"
+								},
+								{
+									"key": "person_name",
+									"value": "John Smith",
+									"type": "text"
+								},
+								{
+									"key": "face_alias",
+									"value": "profile_photo",
+									"type": "text"
+								},
+								{
+									"key": "is_primary",
+									"value": "true",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"register"
+							]
+						},
+						"description": "**Enhanced Face Registration**\n\nRegisters a face with enhanced metadata including app isolation and face aliases.\n\n**Form Data:**\n- `image`: Image file (required)\n- `app_id`: Application identifier (required)\n- `person_id`: Person identifier within app (required)\n- `person_name`: Display name (required)\n- `face_alias`: Descriptive alias (optional, e.g., 'profile_photo')\n- `is_primary`: Mark as primary face (optional, default: false)\n\n**Response Example:**\n```json\n{\n  \"success\": true,\n  \"face_record_id\": 123,\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"john_001\",\n  \"person_name\": \"John Smith\",\n  \"face_alias\": \"profile_photo\",\n  \"is_primary\": true,\n  \"face_detected\": {\n    \"bbox\": [100, 100, 200, 200],\n    \"confidence_score\": 0.98\n  },\n  \"processing_time\": 0.32\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Register Face with Enhanced Metadata (Base64)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has face_record_id\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('face_record_id');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"image_base64\": \"/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/...\",\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"jane_002\",\n  \"person_name\": \"Jane Doe\",\n  \"face_alias\": \"main_photo\",\n  \"is_primary\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"register"
+							]
+						},
+						"description": "**Enhanced Face Registration - Base64**\n\nRegisters a face using base64 encoded image with enhanced metadata.\n\n**Request Body:**\n```json\n{\n  \"image_base64\": \"base64_encoded_image_data\",\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"jane_002\",\n  \"person_name\": \"Jane Doe\",\n  \"face_alias\": \"main_photo\",\n  \"is_primary\": true\n}\n```\n\n**Enhanced Features:**\n- Multi-application isolation\n- Multiple faces per person support\n- Face aliases for organization\n- Primary face designation\n- Ownership validation\n- Comprehensive metadata tracking"
+					},
+					"response": []
+				}
+			],
+			"description": "Enhanced registration with app isolation and face metadata"
+		},
+		{
+			"name": "Enhanced Identification",
+			"item": [
+				{
+					"name": "Best Match Identification (File Upload)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has best_matches field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('best_matches');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "app_id",
+									"value": "mobile_app",
+									"type": "text"
+								},
+								{
+									"key": "similarity_threshold",
+									"value": "0.7",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/identify/best-match",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"identify",
+								"best-match"
+							]
+						},
+						"description": "**Enhanced Best Match Identification**\n\nIdentifies faces with one result per unique person (best match only).\n\n**Form Data:**\n- `image`: Image file containing face(s)\n- `app_id`: Application identifier (required)\n- `similarity_threshold`: Minimum similarity (0.0-1.0, default: 0.6)\n\n**Response Example:**\n```json\n{\n  \"success\": true,\n  \"app_id\": \"mobile_app\",\n  \"faces_detected\": 1,\n  \"matches_found\": 2,\n  \"similarity_threshold\": 0.7,\n  \"best_matches\": [\n    {\n      \"person_id\": \"john_001\",\n      \"person_name\": \"John Smith\",\n      \"face_record_id\": 1,\n      \"face_alias\": \"profile_photo\",\n      \"similarity_score\": 0.89,\n      \"confidence_score\": 0.95,\n      \"is_primary_face\": true\n    }\n  ],\n  \"processing_time\": 0.45\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Best Match Identification (Base64)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has best_matches field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('best_matches');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"image_base64\": \"/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/...\",\n  \"app_id\": \"mobile_app\",\n  \"similarity_threshold\": 0.7\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/identify/best-match",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"identify",
+								"best-match"
+							]
+						},
+						"description": "**Enhanced Best Match Identification - Base64**\n\nIdentifies faces using base64 encoded image with one result per unique person.\n\n**Request Body:**\n```json\n{\n  \"image_base64\": \"base64_encoded_image_data\",\n  \"app_id\": \"mobile_app\",\n  \"similarity_threshold\": 0.7\n}\n```\n\n**Key Features:**\n- Returns only the best matching face per person\n- Application-scoped identification\n- Configurable similarity threshold\n- Detailed match information including face aliases\n- Performance optimized for multiple face scenarios"
+					},
+					"response": []
+				}
+			],
+			"description": "Enhanced identification with best match per person logic"
+		},
+		{
+			"name": "Enhanced Face Management",
+			"item": [
+				{
+					"name": "Get Person Faces",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has faces array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('faces');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/person/faces?app_id=mobile_app&person_id=john_001",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"person",
+								"faces"
+							],
+							"query": [
+								{
+									"key": "app_id",
+									"value": "mobile_app",
+									"description": "Application identifier"
+								},
+								{
+									"key": "person_id",
+									"value": "john_001",
+									"description": "Person identifier within the app"
+								}
+							]
+						},
+						"description": "**Get Person Faces**\n\nRetrieves all faces for a specific person within an application.\n\n**Query Parameters:**\n- `app_id`: Application identifier (required)\n- `person_id`: Person identifier (required)\n\n**Response Example:**\n```json\n{\n  \"success\": true,\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"john_001\",\n  \"person_name\": \"John Smith\",\n  \"face_count\": 3,\n  \"faces\": [\n    {\n      \"face_record_id\": 1,\n      \"face_alias\": \"profile_photo\",\n      \"is_primary\": true,\n      \"created_at\": \"2025-09-15T10:30:00\",\n      \"confidence_score\": 0.98\n    }\n  ]\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get App Persons",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has persons array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('persons');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/app/persons?app_id=mobile_app",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"app",
+								"persons"
+							],
+							"query": [
+								{
+									"key": "app_id",
+									"value": "mobile_app",
+									"description": "Application identifier"
+								}
+							]
+						},
+						"description": "**Get App Persons**\n\nRetrieves all persons registered in a specific application with their face counts.\n\n**Query Parameters:**\n- `app_id`: Application identifier (required)\n\n**Response Example:**\n```json\n{\n  \"success\": true,\n  \"app_id\": \"mobile_app\",\n  \"person_count\": 25,\n  \"persons\": [\n    {\n      \"person_id\": \"john_001\",\n      \"person_name\": \"John Smith\",\n      \"face_count\": 3,\n      \"primary_face_id\": 1,\n      \"last_updated\": \"2025-09-15T11:45:00\"\n    }\n  ]\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Set Primary Face",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response indicates success\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"john_001\",\n  \"face_record_id\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/person/primary",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"person",
+								"primary"
+							]
+						},
+						"description": "**Set Primary Face**\n\nDesignates a specific face as the primary face for a person within an application.\n\n**Request Body:**\n```json\n{\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"john_001\",\n  \"face_record_id\": 2\n}\n```\n\n**Response Example:**\n```json\n{\n  \"success\": true,\n  \"message\": \"Primary face updated successfully\",\n  \"app_id\": \"mobile_app\",\n  \"person_id\": \"john_001\",\n  \"previous_primary_face_id\": 1,\n  \"new_primary_face_id\": 2\n}\n```"
+					},
+					"response": []
+				}
+			],
+			"description": "Enhanced face management with multi-app support and face aliases"
+		},
+		{
+			"name": "Legacy Face Operations",
+			"item": [
+				{
+					"name": "Detect Faces",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has faces_detected field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('faces_detected');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/detect",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"detect"
+							]
+						},
+						"description": "**Legacy Face Detection**\n\nDetects faces in an image without storing them.\n\n**Returns:**\n- Face locations and confidence scores\n- Bounding boxes\n- Processing time"
+					},
+					"response": []
+				},
+				{
+					"name": "Encode Faces",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has faces_processed field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('faces_processed');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/encode",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"encode"
+							]
+						},
+						"description": "**Legacy Face Encoding**\n\nGenerates face embeddings without storing them.\n\n**Returns:**\n- Face embeddings/feature vectors\n- Embedding dimensions\n- Processing time"
+					},
+					"response": []
+				},
+				{
+					"name": "Legacy Identify",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has matches field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('matches');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "similarity_threshold",
+									"value": "0.6",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/identify",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"identify"
+							]
+						},
+						"description": "**Legacy Face Identification**\n\nIdentifies faces against all registered faces (may return multiple matches per person).\n\n**Form Data:**\n- `image`: Image file\n- `similarity_threshold`: Minimum similarity (optional)\n\n**Note:** Use Enhanced Identification for better results with one match per person."
+					},
+					"response": []
+				},
+				{
+					"name": "Search Similar Faces",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has similar_faces field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('similar_faces');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "top_k",
+									"value": "5",
+									"type": "text"
+								},
+								{
+									"key": "similarity_threshold",
+									"value": "0.3",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/search",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"search"
+							]
+						},
+						"description": "**Face Similarity Search**\n\nFinds similar faces without requiring exact matches.\n\n**Form Data:**\n- `image`: Image file\n- `top_k`: Number of results (default: 10)\n- `similarity_threshold`: Minimum similarity (default: 0.3)"
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Face",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has is_match field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('is_match');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "person_id",
+									"value": "john_001",
+									"type": "text"
+								},
+								{
+									"key": "similarity_threshold",
+									"value": "0.6",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/verify",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"verify"
+							]
+						},
+						"description": "**Face Verification (1:1)**\n\nVerifies if a face matches a specific person.\n\n**Form Data:**\n- `image`: Image file\n- `person_id`: Person to verify against\n- `similarity_threshold`: Minimum similarity for match"
+					},
+					"response": []
+				}
+			],
+			"description": "Legacy face operation endpoints (consider using enhanced versions)"
+		},
+		{
+			"name": "Liveness Detection",
+			"item": [
+				{
+					"name": "Liveness Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has liveness result\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('is_live');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/liveness",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"liveness"
+							]
+						},
+						"description": "**Liveness Detection Check**\n\nProvides liveness detection interface for anti-spoofing.\n\n**Returns:**\n- Liveness detection interface\n- Configuration options\n- Challenge instructions"
+					},
+					"response": []
+				}
+			],
+			"description": "Liveness detection and anti-spoofing endpoints"
+		},
+		{
+			"name": "Video Processing",
+			"item": [
+				{
+					"name": "Video Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has status field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/video/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"video",
+								"health"
+							]
+						},
+						"description": "**Video System Health Check**\n\nChecks the health of the video processing system.\n\n**Returns:**\n- Video system status\n- WebSocket availability\n- Processing capabilities"
+					},
+					"response": []
+				},
+				{
+					"name": "Video Sessions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has sessions data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('active_sessions');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/video/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"video",
+								"sessions"
+							]
+						},
+						"description": "**Video Sessions Management**\n\nRetrieves information about active video processing sessions.\n\n**Returns:**\n- Active session count\n- Session details\n- Performance metrics"
+					},
+					"response": []
+				},
+				{
+					"name": "Video Demo Page",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains HTML\", function () {",
+									"    pm.expect(pm.response.text()).to.include('<html>');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/video/demo",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"video",
+								"demo"
+							]
+						},
+						"description": "**Video Demo Interface**\n\nAccesses the real-time video processing demo interface.\n\n**Returns:**\n- HTML interface for video demo\n- WebSocket connection setup\n- Real-time face recognition display"
+					},
+					"response": []
+				},
+				{
+					"name": "Video Config",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has config field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('config');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/video/config",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"video",
+								"config"
+							]
+						},
+						"description": "**Get Video Processing Configuration**\n\nRetrieves current video processing configuration settings.\n\n**Returns:**\n- Frame processing settings\n- Recognition intervals\n- Performance parameters\n- WebSocket configuration"
+					},
+					"response": []
+				},
+				{
+					"name": "Test Video Processing",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has results field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('results');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/video/test",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"video",
+								"test"
+							]
+						},
+						"description": "**Test Video Processing**\n\nTests video processing capabilities with a single frame.\n\n**Form Data:**\n- `image`: Image file to process\n\n**Returns:**\n- Processing results\n- Performance statistics\n- Face detection/recognition results"
+					},
+					"response": []
+				},
+				{
+					"name": "Disconnect Video Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+									"});",
+									"",
+									"pm.test(\"Response has success or error field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.any.keys('success', 'error');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/video/sessions/session_123",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"video",
+								"sessions",
+								"session_123"
+							]
+						},
+						"description": "**Disconnect Video Session**\n\nForce disconnect a specific video session.\n\n**URL Parameter:**\n- `session_id`: ID of the session to disconnect\n\n**Returns:**\n- Disconnection status\n- Success/error message"
+					},
+					"response": []
+				}
+			],
+			"description": "Real-time video processing and WebSocket endpoints"
+		},
+		{
+			"name": "Database Management",
+			"item": [
+				{
+					"name": "Get Database Stats",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has total_faces field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('total_faces');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/database/stats",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"database",
+								"stats"
+							]
+						},
+						"description": "**Get Database Statistics**\n\nRetrieves comprehensive database statistics and metrics.\n\n**Returns:**\n- Total face records count\n- Unique persons count\n- Database size information\n- Index statistics\n- Performance metrics\n\n**Use Cases:**\n- System monitoring\n- Capacity planning\n- Performance analysis"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Face Record by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response indicates success\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"1"
+							]
+						},
+						"description": "**Delete Face Record by ID**\n\nPermanently removes a face record using the RESTful endpoint.\n\n**URL Parameter:**\n- `{id}`: Face record ID to delete\n\n**Returns:**\n- Deletion success status\n- Processing time\n\n**Use Cases:**\n- RESTful face record deletion\n- Data cleanup\n- Privacy compliance"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Face Record (Legacy)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response indicates success\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/faces/database/delete?face_record_id=1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"faces",
+								"database",
+								"delete"
+							],
+							"query": [
+								{
+									"key": "face_record_id",
+									"value": "1",
+									"description": "ID of the face record to delete"
+								}
+							]
+						},
+						"description": "**Delete Face Record (Legacy)**\n\nPermanently removes a face record from the database using query parameter.\n\n**Parameters:**\n- `face_record_id`: ID of face record to delete\n\n**Returns:**\n- Deletion success status\n- Processing time\n\n**Use Cases:**\n- Legacy deletion method\n- Data cleanup\n- Privacy compliance"
+					},
+					"response": []
+				}
+			],
+			"description": "Database operations and statistics"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5001",
+			"type": "string"
+		},
+		{
+			"key": "api_key",
+			"value": "development",
+			"type": "string"
+		}
+	]
+}

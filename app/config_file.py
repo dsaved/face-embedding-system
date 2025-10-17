@@ -12,6 +12,7 @@ class Config:
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     DEBUG = os.getenv("DEBUG", "False") == "True"
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    PORT = int(os.getenv("PORT", 5001))
     
     # Face processing configuration
     FACE_DETECTION_MODEL = os.getenv("FACE_DETECTION_MODEL", "opencv_dnn")  # opencv_dnn, mtcnn

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from flask import request, jsonify, g
 from werkzeug.exceptions import RequestEntityTooLarge
 import redis
-from app.config import Config
+from app.config_file import Config
 
 # Setup logging
 security_logger = logging.getLogger('security')
@@ -156,6 +156,10 @@ def validate_image_input(data: Dict[str, Any]) -> Dict[str, Any]:
     # Validate file path input
     elif 'image_path' in data:
         validation_info.update(_validate_file_path_input(data['image_path']))
+    
+    # If JSON request but no image data provided
+    else:
+        raise ValidationError("Either 'image_base64' or 'image_path' must be provided in JSON request")
     
     # Validate optional parameters
     _validate_optional_parameters(data)
@@ -321,16 +325,23 @@ def validate_input(validation_type: str = 'image'):
         def decorated_function(*args, **kwargs):
             try:
                 validation_info = {}
+                has_input = False
                 
                 # Validate file uploads
                 if 'image' in request.files:
                     file_info = validate_file_upload(request.files['image'])
                     validation_info.update(file_info)
+                    has_input = True
                 
                 # Validate JSON input
-                if request.is_json and validation_type == 'image':
+                elif request.is_json and validation_type == 'image':
                     image_info = validate_image_input(request.json)
                     validation_info.update(image_info)
+                    has_input = True
+                
+                # Check if any input was provided
+                if not has_input and validation_type == 'image':
+                    raise ValidationError("No image input provided. Please provide either a file upload or JSON with 'image_base64' or 'image_path'")
                 
                 # Store validation info in request context
                 g.validation_info = validation_info
@@ -360,8 +371,9 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
-    # More permissive CSP for demo page, strict for API endpoints
-    if request.endpoint in ['video.video_demo', 'video_demo', 'index'] or request.path in ['/video/demo', '/demo', '/']:
+    # More permissive CSP for demo pages and liveness detection, strict for API endpoints
+    if (request.endpoint in ['video.video_demo', 'video_demo', 'index', 'liveness_check'] or 
+        request.path in ['/video/demo', '/demo', '/', '/liveness']):
         # Allow inline styles/scripts and external CDN for demo functionality
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
