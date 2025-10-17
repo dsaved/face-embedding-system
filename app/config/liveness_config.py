@@ -25,6 +25,27 @@ BLINK_THRESHOLD = 0.15  # Extremely sensitive for instant blink detection
 # Head Movement Detection  
 HEAD_MOVEMENT_THRESHOLD = 0.5  # Ultra-low threshold for immediate detection
 
+# =============================================================================
+# HEAD POSE DETECTION THRESHOLDS
+# =============================================================================
+
+# Head Pose Angles (in degrees)
+LOOK_LEFT_THRESHOLD = 15.0    # Minimum angle to detect looking left
+LOOK_RIGHT_THRESHOLD = -15.0  # Minimum angle to detect looking right  
+LOOK_UP_THRESHOLD = 0.01       # Maximum extreme threshold
+LOOK_DOWN_THRESHOLD = -10.0   # Minimum angle to detect looking down
+
+# =============================================================================
+# FACIAL EXPRESSION DETECTION THRESHOLDS
+# =============================================================================
+
+# Mouth Analysis  
+MOUTH_OPEN_THRESHOLD = 0.0001  # Ultra-ultra-extreme threshold
+SMILE_THRESHOLD = 0.02        # Mouth corner lift threshold for smile detection
+
+# Eye Analysis
+BLINK_THRESHOLD = 0.15  # Extremely sensitive for instant blink detection
+
 # Texture Analysis
 TEXTURE_VARIANCE_THRESHOLD = 10.0  # Very lenient for fastest processing
 
@@ -33,16 +54,22 @@ TEXTURE_VARIANCE_THRESHOLD = 10.0  # Very lenient for fastest processing
 # =============================================================================
 
 # Challenge Counts
-MIN_CHALLENGES = 1  # Single challenge for fastest completion
-MAX_CHALLENGES = 1  # Only one challenge for maximum speed
+MIN_CHALLENGES = 6  # Six specific challenges: smile, open mouth, look right, left, up, down
+MAX_CHALLENGES = 6  # Exactly six challenges for the sequence
 
 # Challenge Timing
 CHALLENGE_TIMEOUT = 15.0  # Reasonable timeout for user actions
 DEFAULT_CHALLENGE_TIMEOUT = 15.0  # Reasonable timeout for user actions
-MAX_ATTEMPTS_PER_CHALLENGE = 2  # Allow a couple of attempts
+MAX_ATTEMPTS_PER_CHALLENGE = 3  # Allow more attempts for complex actions
 
 # Session Configuration
-EXPECTED_DURATION_PER_CHALLENGE = 5.0  # 5 seconds per challenge (for session planning)
+EXPECTED_DURATION_PER_CHALLENGE = 3.0  # 3 seconds per challenge (faster for sequence)
+
+# Challenge Types
+# Challenge configuration for sequence-based liveness testing
+# Reordered to match actual video content: smile and open_mouth at beginning, then directional looks
+CHALLENGE_SEQUENCE = ['smile', 'open_mouth', 'look_right', 'look_left', 'look_up', 'look_down']
+DEFAULT_CHALLENGE_TYPE = 'sequence'  # Use sequence-based challenges
 
 # =============================================================================
 # FEATURE TOGGLES (DISABLED for maximum speed)

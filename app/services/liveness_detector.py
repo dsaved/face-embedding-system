@@ -131,20 +131,25 @@ class AdvancedLivenessDetector:
         return session_info
     
     def _generate_challenges(self):
-        """Generate ULTRA-FAST single challenge for immediate completion"""
-        # SINGLE BLINK CHALLENGE for maximum speed
-        challenge_id = f"ultra_fast_{random.randint(1000, 9999)}"
+        """Generate sequence of challenges: smile, open mouth, look right, left, up, down"""
+        challenges = []
+        sequence = getattr(config, 'CHALLENGE_SEQUENCE', ['smile', 'open_mouth', 'look_right', 'look_left', 'look_up', 'look_down'])
         
-        challenge = LivenessChallenge(
-            challenge_id=challenge_id,
-            challenge_type=getattr(config, 'DEFAULT_CHALLENGE_TYPE', 'blink'),
-            direction=None,
-            start_time=time.time(),
-            timeout=getattr(config, 'CHALLENGE_TIMEOUT', 3.0)
-        )
+        for i, challenge_type in enumerate(sequence):
+            challenge_id = f"sequence_{i+1}_{challenge_type}"
+            
+            challenge = LivenessChallenge(
+                challenge_id=challenge_id,
+                challenge_type=challenge_type,
+                direction=None,
+                start_time=time.time(),
+                timeout=getattr(config, 'CHALLENGE_TIMEOUT', 15.0)
+            )
+            
+            challenges.append(challenge)
         
-        self.active_challenges.append(challenge)
-        logger.info("Generated ULTRA-FAST blink challenge for immediate completion")
+        self.active_challenges.extend(challenges)
+        logger.info(f"Generated sequence of {len(challenges)} challenges: {[c.challenge_type for c in challenges]}")
     
     def _generate_integrity_token(self) -> str:
         """Generate integrity token for tampering detection"""
@@ -438,8 +443,15 @@ class AdvancedLivenessDetector:
         
         mouth_ratio = mouth_width / mouth_height
         
-        # Smile typically increases mouth width ratio
-        return bool(mouth_ratio > 3.0)
+        # Smile detection: much higher threshold to avoid false positives
+        # Also check if mouth corners are elevated compared to center
+        mouth_center_y = (mouth_top[1] + mouth_bottom[1]) / 2
+        left_corner_lift = mouth_center_y - mouth_left[1]
+        right_corner_lift = mouth_center_y - mouth_right[1]
+        corner_lift_avg = (left_corner_lift + right_corner_lift) / 2
+        
+        # Require both wide mouth AND elevated corners for smile
+        return bool(mouth_ratio > 4.5 and corner_lift_avg > 2.0)
     
     def detect_mouth_open(self, face_landmarks: np.ndarray) -> bool:
         """Detect open mouth from facial landmarks"""
@@ -462,7 +474,49 @@ class AdvancedLivenessDetector:
         # Open mouth has higher height to width ratio
         mouth_opening_ratio = mouth_height / mouth_width
         
-        return bool(mouth_opening_ratio > 0.3)
+        # Use configurable threshold for mouth opening detection
+        threshold = getattr(config, 'MOUTH_OPEN_THRESHOLD', 0.4)
+        return bool(mouth_opening_ratio > threshold)
+
+    def detect_head_pose(self, face_landmarks: np.ndarray) -> Dict[str, bool]:
+        """Detect head pose directions from facial landmarks"""
+        if len(face_landmarks) < 68:
+            return {'look_left': False, 'look_right': False, 'look_up': False, 'look_down': False}
+        
+        # Key facial landmarks for pose estimation
+        nose_tip = face_landmarks[30]
+        left_eye = face_landmarks[36]
+        right_eye = face_landmarks[45]
+        chin = face_landmarks[8]
+        
+        # Calculate face center and dimensions
+        face_center_x = (left_eye[0] + right_eye[0]) / 2
+        face_center_y = (left_eye[1] + right_eye[1]) / 2
+        
+        # Calculate head pose based on nose position relative to face center
+        nose_offset_x = nose_tip[0] - face_center_x
+        nose_offset_y = nose_tip[1] - face_center_y
+        
+        # Eye distance for normalization
+        eye_distance = euclidean(left_eye, right_eye)
+        
+        if eye_distance == 0:
+            return {'look_left': False, 'look_right': False, 'look_up': False, 'look_down': False}
+        
+        # Normalize offsets by eye distance
+        norm_x = nose_offset_x / eye_distance
+        norm_y = nose_offset_y / eye_distance
+        
+        # Use configurable thresholds for head pose detection
+        look_thresh_horizontal = 0.15  # For left/right detection
+        look_thresh_vertical = 0.12    # More sensitive for up/down detection
+        
+        return {
+            'look_left': norm_x < -look_thresh_horizontal,
+            'look_right': norm_x > look_thresh_horizontal,
+            'look_up': norm_y < -look_thresh_vertical,    # Made more sensitive
+            'look_down': norm_y > look_thresh_vertical
+        }
     
     def process_liveness_frame(self, frame: np.ndarray, face_landmarks: np.ndarray, 
                              face_bbox: Tuple[int, int, int, int], 
@@ -501,26 +555,35 @@ class AdvancedLivenessDetector:
         return response
     
     def _process_challenges_ultra_fast(self, face_landmarks: np.ndarray) -> Dict[str, Any]:
-        """ULTRA-FAST challenge processing for immediate completion"""
+        """Process challenges for all action types in sequence"""
         results = {}
         
-        # Process only active challenges with ultra-aggressive detection
+        # Process only active challenges
         for challenge in self.active_challenges[:]:
             if challenge.completed:
                 continue
                 
-            # ULTRA-AGGRESSIVE blink detection for instant completion
+            challenge_passed = False
+            
+            # Check challenge type and detect appropriate action
             if challenge.challenge_type == "blink":
-                # Extremely sensitive blink detection
-                blink_detected = self.detect_blink_ultra_fast(face_landmarks)
-                if blink_detected:
-                    challenge.completed = True
-                    self.completed_challenges.append(challenge)
-                    self.active_challenges.remove(challenge)
-                    results[challenge.challenge_id] = "completed"
-                    logger.info("ULTRA-FAST blink challenge completed immediately!")
-                else:
-                    results[challenge.challenge_id] = "in_progress"
+                challenge_passed = self.detect_blink_ultra_fast(face_landmarks)
+            elif challenge.challenge_type == "smile":
+                challenge_passed = self.detect_smile(face_landmarks)
+            elif challenge.challenge_type == "open_mouth":
+                challenge_passed = self.detect_mouth_open(face_landmarks)
+            elif challenge.challenge_type in ["look_left", "look_right", "look_up", "look_down"]:
+                head_poses = self.detect_head_pose(face_landmarks)
+                challenge_passed = head_poses.get(challenge.challenge_type, False)
+            
+            if challenge_passed:
+                challenge.completed = True
+                self.completed_challenges.append(challenge)
+                self.active_challenges.remove(challenge)
+                results[challenge.challenge_id] = "completed"
+                logger.info(f"Challenge {challenge.challenge_type} completed!")
+            else:
+                results[challenge.challenge_id] = "in_progress"
         
         return results
     

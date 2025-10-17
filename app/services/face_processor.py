@@ -243,13 +243,81 @@ class FaceDetector:
         faces = []
         for i, (top, right, bottom, left) in enumerate(face_locations):
             bbox = (left, top, right - left, bottom - top)
-            logger.debug(f"Face {i+1}: bbox={bbox}")
+            
+            # Estimate confidence based on face size and quality
+            confidence = self._estimate_face_confidence(rgb_image, bbox)
+            
+            logger.debug(f"Face {i+1}: bbox={bbox}, estimated_confidence={confidence:.3f}")
             faces.append({
                 'bbox': bbox,
-                'confidence': 0.9,  # face_recognition doesn't provide confidence, use high value
+                'confidence': confidence,
                 'landmarks': None
             })
         return faces
+    
+    def _estimate_face_confidence(self, image: np.ndarray, bbox: Tuple[int, int, int, int]) -> float:
+        """Estimate confidence score for face_recognition detections based on face quality metrics."""
+        try:
+            x, y, width, height = bbox
+            h, w = image.shape[:2]
+            
+            # Base confidence for face_recognition detections
+            confidence = 0.7
+            
+            # 1. Size factor - larger faces are generally more reliable
+            face_area = width * height
+            image_area = w * h
+            size_ratio = face_area / image_area
+            
+            if size_ratio > 0.05:  # Face > 5% of image
+                confidence += 0.15
+            elif size_ratio > 0.02:  # Face > 2% of image
+                confidence += 0.10
+            elif size_ratio < 0.005:  # Very small face
+                confidence -= 0.15
+            
+            # 2. Aspect ratio factor - faces should be roughly square
+            aspect_ratio = width / height
+            if 0.8 <= aspect_ratio <= 1.25:  # Good aspect ratio
+                confidence += 0.05
+            elif aspect_ratio < 0.6 or aspect_ratio > 1.8:  # Poor aspect ratio
+                confidence -= 0.10
+            
+            # 3. Position factor - faces near edges might be partial
+            center_x, center_y = x + width/2, y + height/2
+            edge_distance = min(center_x/w, center_y/h, (w-center_x)/w, (h-center_y)/h)
+            if edge_distance > 0.1:  # Not too close to edges
+                confidence += 0.05
+            elif edge_distance < 0.05:  # Very close to edges
+                confidence -= 0.10
+            
+            # 4. Image quality factor (simple brightness and contrast check)
+            face_region = image[y:y+height, x:x+width]
+            if face_region.size > 0:
+                gray_face = cv2.cvtColor(face_region, cv2.COLOR_RGB2GRAY) if len(face_region.shape) == 3 else face_region
+                mean_brightness = np.mean(gray_face)
+                std_brightness = np.std(gray_face)
+                
+                # Good brightness range
+                if 50 <= mean_brightness <= 200:
+                    confidence += 0.05
+                elif mean_brightness < 30 or mean_brightness > 220:
+                    confidence -= 0.10
+                
+                # Good contrast (std deviation)
+                if std_brightness > 20:
+                    confidence += 0.05
+                elif std_brightness < 10:
+                    confidence -= 0.05
+            
+            # Clamp confidence to reasonable range
+            confidence = max(0.4, min(0.95, confidence))
+            
+            return confidence
+            
+        except Exception as e:
+            logger.debug(f"Error estimating face confidence: {e}")
+            return 0.75  # Default fallback confidence
     
     def _post_process_detections(self, image: np.ndarray, faces: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Apply post-processing to improve detection accuracy and reduce false positives."""

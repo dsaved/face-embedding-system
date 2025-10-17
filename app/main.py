@@ -22,6 +22,8 @@ logging.basicConfig(
     ]
 )
 
+logger = logging.getLogger(__name__)
+
 # Configure audit logging
 audit_logger = logging.getLogger('audit')
 audit_handler = logging.FileHandler(Config.AUDIT_LOG_FILE) if Config.AUDIT_LOG_ENABLED else logging.StreamHandler()
@@ -211,8 +213,13 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    # For development - use socketio.run if available, otherwise regular Flask run
-    if hasattr(app, 'socketio') and app.socketio:
-        app.socketio.run(app, host="0.0.0.0", port=5001, debug=Config.DEBUG)
-    else:
-        app.run(host="0.0.0.0", port=5001, debug=Config.DEBUG)
+    try:
+        logger.info("Starting Face Embedding System...")
+        logger.info(f"Server will run on http://0.0.0.0:{Config.PORT}")
+        logger.info(f"Debug mode: {Config.DEBUG}")
+        
+        # Allow unsafe Werkzeug for PM2 deployment
+        app.socketio.run(app, host="0.0.0.0", port=Config.PORT, debug=Config.DEBUG, allow_unsafe_werkzeug=True)
+    except Exception as e:
+        logger.error(f"Failed to start server: {e}")
+        raise

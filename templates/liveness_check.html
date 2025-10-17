@@ -121,74 +121,89 @@
             gap: 10px;
         }
 
-        /* Video overlay elements */
+        /* Video overlay elements - SMALLER SIZES */
         .overlay-instruction {
             background: rgba(0, 123, 255, 0.95);
             color: white;
-            padding: 15px 25px;
-            border-radius: 25px;
-            font-size: 1.3em;
+            padding: 8px 16px;  /* Reduced from 15px 25px */
+            border-radius: 15px;  /* Reduced from 25px */
+            font-size: 1.0em;   /* Reduced from 1.3em */
             font-weight: bold;
             text-align: center;
-            box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.4);  /* Reduced shadow */
             animation: pulse 2s infinite;
-            max-width: 400px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            max-width: 300px;   /* Reduced from 400px */
+            border: 1px solid rgba(255, 255, 255, 0.3);  /* Thinner border */
             align-self: flex-start;
+        }
+
+        .overlay-result {
+            background: rgba(40, 167, 69, 0.85);  /* Different color for results */
+            color: white;
+            padding: 6px 12px;  /* Smaller than instruction */
+            border-radius: 12px;
+            font-size: 0.85em;  /* Smaller font */
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(40, 167, 69, 0.4);
+            max-width: 250px;   /* Smaller than instruction */
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            align-self: flex-start;
+            margin-top: 5px;    /* Space between instruction and result */
         }
 
         .overlay-error {
             background: rgba(220, 53, 69, 0.95);
             color: white;
-            padding: 12px 20px;
-            border-radius: 20px;
-            font-size: 1.1em;
+            padding: 8px 16px;  /* Reduced from 12px 20px */
+            border-radius: 12px;  /* Reduced from 20px */
+            font-size: 0.95em;  /* Reduced from 1.1em */
             font-weight: bold;
             text-align: center;
-            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
+            box-shadow: 0 2px 8px rgba(220, 53, 69, 0.4);  /* Reduced shadow */
             animation: shake 0.5s ease-in-out;
-            max-width: 400px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            max-width: 300px;   /* Reduced from 400px */
+            border: 1px solid rgba(255, 255, 255, 0.3);
             align-self: flex-start;
         }
 
         .overlay-success {
             background: rgba(40, 167, 69, 0.95);
             color: white;
-            padding: 12px 20px;
-            border-radius: 20px;
-            font-size: 1.1em;
+            padding: 8px 16px;  /* Reduced from 12px 20px */
+            border-radius: 12px;  /* Reduced from 20px */
+            font-size: 0.95em;  /* Reduced from 1.1em */
             font-weight: bold;
             text-align: center;
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.4);  /* Reduced shadow */
             animation: bounce 0.5s ease-in-out;
-            max-width: 400px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            max-width: 300px;   /* Reduced from 400px */
+            border: 1px solid rgba(255, 255, 255, 0.3);
             align-self: flex-start;
         }
 
         .overlay-timer {
             background: rgba(255, 193, 7, 0.9);
             color: #000;
-            padding: 10px 15px;
-            border-radius: 15px;
-            font-size: 1.2em;
+            padding: 6px 12px;  /* Reduced from 10px 15px */
+            border-radius: 10px;  /* Reduced from 15px */
+            font-size: 1.0em;   /* Reduced from 1.2em */
             font-weight: bold;
             text-align: center;
-            box-shadow: 0 2px 10px rgba(255, 193, 7, 0.4);
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 2px 6px rgba(255, 193, 7, 0.4);  /* Reduced shadow */
+            border: 1px solid rgba(255, 255, 255, 0.3);
             align-self: flex-end;
         }
 
         .overlay-status {
             background: rgba(108, 117, 125, 0.9);
             color: white;
-            padding: 8px 15px;
-            border-radius: 12px;
-            font-size: 0.9em;
+            padding: 4px 10px;  /* Reduced from 8px 15px */
+            border-radius: 8px;  /* Reduced from 12px */
+            font-size: 0.8em;   /* Reduced from 0.9em */
             font-weight: bold;
             text-align: center;
-            box-shadow: 0 2px 8px rgba(108, 117, 125, 0.4);
+            box-shadow: 0 1px 4px rgba(108, 117, 125, 0.4);  /* Reduced shadow */
             align-self: flex-start;
         }
 
@@ -495,9 +510,16 @@
                     <div class="overlay-top" id="overlay-top">
                         <!-- Timer will be added here -->
                     </div>
-                    <!-- Instructions and status in bottom-left -->
+                    <!-- Instructions and results in bottom-left -->
                     <div class="overlay-bottom" id="overlay-bottom">
-                        <!-- Instructions and status will be added here -->
+                        <!-- Current instruction display -->
+                        <div id="instruction-area">
+                            <!-- Current instruction will be added here -->
+                        </div>
+                        <!-- Results of completed actions -->
+                        <div id="result-area">
+                            <!-- Completed action results will be added here -->
+                        </div>
                     </div>
                 </div>
                 <canvas id="canvas" class="hidden"></canvas>
@@ -563,6 +585,8 @@
                 this.videoOverlay = document.getElementById('video-overlay');
                 this.overlayTop = document.getElementById('overlay-top');
                 this.overlayBottom = document.getElementById('overlay-bottom');
+                this.instructionArea = document.getElementById('instruction-area');
+                this.resultArea = document.getElementById('result-area');
                 this.progressMini = document.getElementById('progress-mini');
                 this.startBtn = document.getElementById('start-btn');
                 this.resetBtn = document.getElementById('reset-btn');
@@ -697,15 +721,25 @@
                     // Timer goes to top-right
                     this.overlayTop.innerHTML = ''; // Clear existing timer
                     this.overlayTop.appendChild(overlay);
-                } else {
-                    // Instructions, status, error, success go to bottom-left
-                    // For non-status types, clear existing overlays
-                    if (type !== 'status') {
-                        // Clear existing non-status overlays from bottom
-                        const existingOverlays = this.overlayBottom.querySelectorAll(':not(.overlay-status)');
-                        existingOverlays.forEach(overlay => overlay.remove());
-                    }
+                } else if (type === 'instruction') {
+                    // Instructions go to instruction area
+                    this.instructionArea.innerHTML = ''; // Clear existing instructions
+                    this.instructionArea.appendChild(overlay);
+                } else if (type === 'result') {
+                    // Results go to result area (append, don't replace)
+                    this.resultArea.appendChild(overlay);
+                } else if (type === 'success' || type === 'error') {
+                    // Success/error messages go to a separate temporary overlay area
+                    // Create a temporary overlay that doesn't interfere with instructions
+                    overlay.style.position = 'absolute';
+                    overlay.style.top = '50px';
+                    overlay.style.left = '20px';
+                    overlay.style.zIndex = '1000';
                     this.overlayBottom.appendChild(overlay);
+                } else {
+                    // Status and other messages go to instruction area
+                    this.instructionArea.innerHTML = '';
+                    this.instructionArea.appendChild(overlay);
                 }
 
                 // Auto-hide after duration if specified
@@ -826,6 +860,10 @@
                     this.session = data.session_info;
                     this.integrityToken = data.session_info.integrity_token;
                     
+                    // Clear result area for new session
+                    this.resultArea.innerHTML = '';
+                    this.instructionArea.innerHTML = '';
+                    
                     this.updateStatus('active', 'Session Active');
                     this.setupProgressDots(data.session_info.challenges);
                     this.showNextRandomChallenge();
@@ -877,14 +915,13 @@
 
             getRandomInstruction(challengeType, direction = null) {
                 const instructions = {
-                    'blink': ['👁️ Please blink your eyes', '😉 Blink naturally', '👀 Blink slowly'],
                     'smile': ['😊 Please smile', '😄 Show me a smile', '🙂 Smile naturally'],
-                    'mouth_open': ['😮 Open your mouth', '🗣️ Say "Ah"', '😯 Open wide'],
-                    'head_turn': direction === 'left' ? 
-                        ['👈 Turn your head left', '⬅️ Look to the left', '↩️ Turn left slowly'] :
-                        ['👉 Turn your head right', '➡️ Look to the right', '↪️ Turn right slowly'],
-                    'nod': ['👆 Nod your head', '⬆️⬇️ Nod up and down', '🤗 Give me a nod'],
-                    'raise_eyebrows': ['🤨 Raise your eyebrows', '😲 Look surprised', '🤔 Raise those brows']
+                    'open_mouth': ['😮 Open your mouth', '🗣️ Say "Ah"', '😯 Open wide'],
+                    'look_left': ['👈 Look to the left', '⬅️ Turn your head left', '↩️ Look left slowly'],
+                    'look_right': ['👉 Look to the right', '➡️ Turn your head right', '↪️ Look right slowly'],
+                    'look_up': ['👆 Look up', '⬆️ Tilt your head up', '🔝 Look towards the ceiling'],
+                    'look_down': ['👇 Look down', '⬇️ Tilt your head down', '🔽 Look towards the floor'],
+                    'blink': ['👁️ Please blink your eyes', '� Blink naturally', '👀 Blink slowly']
                 };
 
                 const typeInstructions = instructions[challengeType] || [`Perform ${challengeType}`];
@@ -1006,19 +1043,31 @@
                                 dot.className = 'progress-dot completed';
                             }
                             
-                            // Clear timer and show success
+                            // Clear timer and timer display
                             if (this.timerInterval) {
                                 clearInterval(this.timerInterval);
+                                this.timerInterval = null;
                             }
+                            // Clear timer display
+                            this.overlayTop.innerHTML = '';
                             
-                            this.showOverlayMessage('✅ Challenge completed! Well done!', 'success', 2000);
+                            // Show completion in result area
+                            const actionName = this.getActionDisplayName(challenge.challenge_type);
+                            this.showOverlayMessage(`✅ ${actionName}`, 'result');
+                            
+                            // Show brief success message in instruction area
+                            this.showOverlayMessage('Great! Continue to next action...', 'success', 1500);
                             
                             setTimeout(() => {
                                 this.showNextRandomChallenge();
-                            }, 2000);
+                            }, 1500);
                         } else if (status === 'in_progress') {
-                            // Show feedback that the action is being detected
-                            this.showOverlayMessage('👀 Action detected - keep going!', 'success', 1000);
+                            // Throttle the "action detected" messages to avoid spam
+                            const now = Date.now();
+                            if (!this.lastProgressMessage || now - this.lastProgressMessage > 2000) {
+                                this.showOverlayMessage('👀 Keep going...', 'success', 800);
+                                this.lastProgressMessage = now;
+                            }
                         } else if (status === 'failed') {
                             if (dot) {
                                 dot.className = 'progress-dot failed';
@@ -1027,6 +1076,19 @@
                         }
                     }
                 });
+            }
+
+            getActionDisplayName(challengeType) {
+                const displayNames = {
+                    'smile': 'Smile',
+                    'open_mouth': 'Open Mouth',
+                    'look_left': 'Look Left',
+                    'look_right': 'Look Right',
+                    'look_up': 'Look Up',
+                    'look_down': 'Look Down',
+                    'blink': 'Blink'
+                };
+                return displayNames[challengeType] || challengeType;
             }
 
             handleSessionComplete(data) {
