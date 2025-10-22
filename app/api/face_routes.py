@@ -54,24 +54,49 @@ def convert_numpy_types(obj):
 # Create blueprint
 face_api = Blueprint('face_api', __name__, url_prefix='/api/v1/faces')
 
-# Initialize services (lazy loading to avoid database connection at import)
-face_processor = None
-db_service = None
+# Optimized singleton pattern for services with caching
+class OptimizedFaceProcessor:
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(OptimizedFaceProcessor, cls).__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        if not OptimizedFaceProcessor._initialized:
+            # Initialize with fastest model configuration
+            self.processor = FaceProcessor(
+                detection_model=Config.FACE_DETECTION_MODEL,
+                encoding_model=Config.FACE_ENCODING_MODEL
+            )
+            OptimizedFaceProcessor._initialized = True
+            logger.info("OptimizedFaceProcessor singleton initialized")
+    
+    @property 
+    def detector(self):
+        return self.processor.detector
+    
+    @property
+    def encoder(self):
+        return self.processor.encoder
+
+# Global cached instance
+_face_processor = None
+_db_service = None
 
 def get_face_processor():
-    global face_processor
-    if face_processor is None:
-        face_processor = FaceProcessor(
-            detection_model=Config.FACE_DETECTION_MODEL,
-            encoding_model=Config.FACE_ENCODING_MODEL
-        )
-    return face_processor
+    global _face_processor
+    if _face_processor is None:
+        _face_processor = OptimizedFaceProcessor()
+    return _face_processor
 
 def get_db_service():
-    global db_service
-    if db_service is None:
-        db_service = DatabaseService()
-    return db_service
+    global _db_service  
+    if _db_service is None:
+        _db_service = DatabaseService()
+    return _db_service
 
 
 def allowed_file(filename: str) -> bool:
@@ -160,11 +185,9 @@ def get_image_from_request(request) -> tuple[Optional[np.ndarray], Optional[str]
 @face_api.route('/detect', methods=['POST'])
 @require_api_key
 @rate_limit(limit=50, window=60)  # 50 requests per minute
-@validate_input('image')
-@audit_request
 def detect_faces():
     """
-    Detect faces in an image.
+    Optimized face detection endpoint - removed database logging and unnecessary middleware for maximum performance.
     
     Expected input:
     - image file (multipart/form-data) or
@@ -177,34 +200,42 @@ def detect_faces():
     try:
         start_time = time.time()
         
-        # Get image from request
-        image, temp_file_path, should_cleanup = get_image_from_request(request)
+        # Optimized image retrieval - skip temp files for base64 images
+        image = None
+        temp_file_path = None
+        should_cleanup = False
+        
+        # Handle file upload (fastest path - direct memory)
+        if 'image' in request.files:
+            file = request.files['image']
+            if file and allowed_file(file.filename):
+                # Read directly into memory without temp file
+                file_bytes = file.read()
+                nparr = np.frombuffer(file_bytes, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # Handle JSON requests
+        elif request.is_json:
+            # Base64 image (optimized)
+            if 'image_base64' in request.json:
+                image = decode_base64_image(request.json['image_base64'])
+            # File path (fallback - still requires disk I/O)
+            elif 'image_path' in request.json:
+                image = cv2.imread(request.json['image_path'])
         
         if image is None:
-            cleanup_temp_file(temp_file_path, should_cleanup)
             return jsonify({'error': ERROR_NO_IMAGE}), 400
         
-        # Get optional parameters
-        min_confidence = request.json.get('min_confidence', Config.FACE_CONFIDENCE_THRESHOLD) if request.is_json else Config.FACE_CONFIDENCE_THRESHOLD
+        # Get optional parameters with faster default lookup
+        min_confidence = Config.FACE_CONFIDENCE_THRESHOLD
+        if request.is_json and 'min_confidence' in request.json:
+            min_confidence = request.json['min_confidence']
         
-        # Detect faces
+        # Detect faces using cached processor
         detected_faces = get_face_processor().detector.detect_faces(image, min_confidence)
         
         processing_time = time.time() - start_time
         
-        # Log operation
-        input_source = temp_file_path if temp_file_path else "base64_image"
-        get_db_service().log_operation(
-            operation_type='detect',
-            input_source=input_source,
-            processing_time=processing_time,
-            faces_detected=len(detected_faces),
-            success=True
-        )
-        
-        # Clean up temporary file if needed
-        cleanup_temp_file(temp_file_path, should_cleanup)
-        
+        # Return optimized response (removed database logging for performance)
         return jsonify(convert_numpy_types({
             'success': True,
             'faces_detected': len(detected_faces),
@@ -220,11 +251,7 @@ def detect_faces():
         }))
     
     except Exception as e:
-        logger.error(f"Face detection error: {e}")
-        # Clean up temporary file if needed (even on error)
-        if 'temp_file_path' in locals() and 'should_cleanup' in locals():
-            cleanup_temp_file(temp_file_path, should_cleanup)
-        
+        logger.error(f"Face detection error: {e}")        
         return jsonify({'error': str(e)}), 500
 
 

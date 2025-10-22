@@ -1,1 +1,1 @@
-source .venv/bin/activate && python -m app.main --debug
+source .venv/bin/activate && python -m app.main

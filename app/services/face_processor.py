@@ -32,7 +32,7 @@ class FaceDetector:
             raise ValueError(f"Unsupported face detection model: {self.model_type}")
     
     def _init_opencv_dnn(self):
-        """Initialize OpenCV DNN face detector."""
+        """Initialize OpenCV DNN face detector with fast fallback."""
         try:
             import os
             # Get absolute path to models directory
@@ -43,18 +43,20 @@ class FaceDetector:
             model_weights = os.path.join(model_dir, 'opencv_face_detector_uint8.pb')
             model_config = os.path.join(model_dir, 'opencv_face_detector.pbtxt')
             
+            # Quick file existence check before attempting to load
+            if not os.path.exists(model_weights) or not os.path.exists(model_config):
+                raise FileNotFoundError(f"Model files not found: weights={os.path.exists(model_weights)}, config={os.path.exists(model_config)}")
+            
             logger.debug(f"Loading OpenCV DNN models from: {model_dir}")
-            logger.debug(f"Model weights: {model_weights}")
-            logger.debug(f"Model config: {model_config}")
             
             # Load the DNN model
             self.net = cv2.dnn.readNetFromTensorflow(model_weights, model_config)
             logger.info("OpenCV DNN face detector initialized successfully")
         except Exception as e:
             logger.warning(f"Could not load OpenCV DNN model: {e}")
-            # Fallback to face_recognition library which is more accurate than Haar cascade
+            # Immediate fallback to face_recognition library for maximum speed
             self.model_type = "face_recognition_hog"
-            logger.info("Fallback to face_recognition HOG detector")
+            logger.info("Fast fallback to face_recognition HOG detector")
     
     def _init_mtcnn(self):
         """Initialize MTCNN face detector."""
@@ -219,26 +221,29 @@ class FaceDetector:
         return faces
     
     def _detect_face_recognition(self, image: np.ndarray) -> List[Dict[str, Any]]:
-        """Detect faces using face_recognition library (more accurate fallback)."""
+        """Balanced face detection using face_recognition library - good speed with reliable detection."""
         logger.debug(f"Using face_recognition detection on image shape: {image.shape}")
         
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Try CNN model first (more accurate but slower)
-        try:
-            face_locations = face_recognition.face_locations(rgb_image, model="cnn")
-            logger.debug(f"face_recognition CNN found {len(face_locations)} face locations")
-        except Exception as e:
-            logger.debug(f"CNN model failed, falling back to HOG: {e}")
-            # Fallback to HOG model (faster, good accuracy)
-            face_locations = face_recognition.face_locations(rgb_image, model="hog")
-            logger.debug(f"face_recognition HOG found {len(face_locations)} face locations")
+        # Use HOG model with standard upsampling for good balance of speed and accuracy
+        face_locations = face_recognition.face_locations(rgb_image, model="hog", number_of_times_to_upsample=1)
+        logger.debug(f"face_recognition HOG found {len(face_locations)} face locations")
         
-        # If still no faces found, try with different number_of_times_to_upsample
-        if len(face_locations) == 0:
-            logger.debug("No faces found, trying with upsampling")
-            face_locations = face_recognition.face_locations(rgb_image, model="hog", number_of_times_to_upsample=1)
-            logger.debug(f"face_recognition with upsampling found {len(face_locations)} face locations")
+        # Try additional upsampling if no faces found and image is reasonably large
+        if len(face_locations) == 0 and min(image.shape[:2]) >= 200:
+            logger.debug("No faces found in medium/large image, trying with more upsampling")
+            face_locations = face_recognition.face_locations(rgb_image, model="hog", number_of_times_to_upsample=2)
+            logger.debug(f"face_recognition with extra upsampling found {len(face_locations)} face locations")
+        
+        # If still no faces found with HOG, try CNN model as last resort (slower but more accurate)
+        if len(face_locations) == 0 and min(image.shape[:2]) >= 200:
+            logger.debug("HOG failed, trying CNN model for difficult face detection")
+            try:
+                face_locations = face_recognition.face_locations(rgb_image, model="cnn", number_of_times_to_upsample=1)
+                logger.debug(f"face_recognition CNN found {len(face_locations)} face locations")
+            except Exception as e:
+                logger.debug(f"CNN model failed: {e}, continuing with no detections")
         
         faces = []
         for i, (top, right, bottom, left) in enumerate(face_locations):
@@ -320,51 +325,44 @@ class FaceDetector:
             return 0.75  # Default fallback confidence
     
     def _post_process_detections(self, image: np.ndarray, faces: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Apply post-processing to improve detection accuracy and reduce false positives."""
+        """Optimized post-processing for maximum speed - essential validations only."""
         if not faces:
             return faces
         
         h, w = image.shape[:2]
         valid_faces = []
         
+        # Fast validation loop with minimal processing
         for face in faces:
             x, y, width, height = face['bbox']
             
-            # 1. Size validation - remove very small faces (likely false positives)
-            min_face_size = max(80, min(w, h) * 0.05)  # Minimum 80px or 5% of image dimension
+            # 1. More reasonable size validation - smaller minimum for performance
+            min_face_size = max(20, min(w, h) * 0.02)  # 20px minimum or 2% of image
             if width < min_face_size or height < min_face_size:
                 logger.debug(f"Filtered small face: {width}x{height} < {min_face_size}")
                 continue
             
-            # 2. Aspect ratio validation - faces should be roughly square-ish
-            aspect_ratio = width / height
-            if aspect_ratio < 0.6 or aspect_ratio > 1.8:
-                logger.debug(f"Filtered face with bad aspect ratio: {aspect_ratio}")
+            # 2. Fast aspect ratio check (more lenient)
+            if height == 0 or width / height > 3.0 or height / width > 3.0:
+                logger.debug(f"Filtered face with bad aspect ratio: {width/height if height > 0 else 'inf'}")
                 continue
             
-            # 3. Position validation - ensure face is within image bounds
-            if x < 0 or y < 0 or x + width > w or y + height > h:
-                logger.debug(f"Filtered face outside image bounds: {face['bbox']}")
-                continue
-            
-            # 4. Skip face verification for now - trust the detector
-            # Note: Additional verification was too strict and filtering valid faces
-            valid_faces.append(face)
-            logger.debug(f"Face passed basic validation: bbox={face['bbox']}")
+            # 3. Bounds check (essential for safety)
+            if x >= 0 and y >= 0 and x + width <= w and y + height <= h:
+                valid_faces.append(face)
+                logger.debug(f"Face passed validation: bbox={face['bbox']}")
+            else:
+                logger.debug(f"Filtered face outside bounds: {face['bbox']}")
         
-        # 5. Apply Non-Maximum Suppression to remove overlapping detections
-        valid_faces = self._apply_nms(valid_faces, overlap_threshold=0.4)
+        # Skip NMS for speed unless many faces detected (>5)
+        if len(valid_faces) > 5:
+            valid_faces = self._apply_nms(valid_faces, overlap_threshold=0.4)
         
-        # 6. Sort by confidence and size (prefer larger, more confident faces)
-        valid_faces.sort(key=lambda f: f['confidence'] * (f['bbox'][2] * f['bbox'][3]), reverse=True)
+        # Fast sort by confidence only (skip size calculation)
+        valid_faces.sort(key=lambda f: f['confidence'], reverse=True)
         
-        # 7. Limit number of faces to prevent too many false positives
-        max_faces = 3
-        if len(valid_faces) > max_faces:
-            valid_faces = valid_faces[:max_faces]
-            logger.info(f"Limited detections to {max_faces} most confident faces")
-        
-        return valid_faces
+        # Limit to top 3 faces for performance
+        return valid_faces[:3]
     
     def _verify_face_with_encodings(self, image: np.ndarray, face: Dict[str, Any]) -> bool:
         """Verify if a detection is actually a face using face encodings."""
